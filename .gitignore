@@ -1,0 +1,20 @@
+
+# Unreal Engine : fichiers générés
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Fichiers temporaires et IDE
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.user
+*.opensdf
+*.sdf
+
+# Fichiers système
+.DS_Store
+Thumbs.db
