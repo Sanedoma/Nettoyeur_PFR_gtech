@@ -1,13 +1,16 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "ComposantNettoyage.h"
+#include "UObject/StructOnScope.h"
+#include "UObject/UnrealType.h"
+
 #include "GameFramework/Character.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
 #include "DrawDebugHelpers.h"
 #include "PreuveNettoyable.h"
+
 
 // Sets default values for this component's properties
 UComposantNettoyage::UComposantNettoyage()
@@ -33,9 +36,61 @@ void UComposantNettoyage::BeginPlay()
 // Called every frame
 void UComposantNettoyage::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	// ...
+    Personnage = Cast<ACharacter>(GetOwner());
+
+    if (!Personnage || !GetWorld())
+    {
+        return;
+    }
+
+    CameraJoueur = Personnage->FindComponentByClass<UCameraComponent>();
+
+    if (!CameraJoueur)
+    {
+        return;
+    }
+
+    const FVector Debut = CameraJoueur->GetComponentLocation();
+    const FVector Direction = CameraJoueur->GetForwardVector();
+    const FVector Fin = Debut + (Direction * 300.0f);
+    bool PeutNettoyer = false;
+    
+    FHitResult Resultat;
+    FCollisionQueryParams Parametres;
+    Parametres.AddIgnoredActor(Personnage);
+
+    GetWorld()->LineTraceSingleByChannel(
+        Resultat,
+        Debut,
+        Fin,
+        ECC_Visibility,
+        Parametres
+    );
+
+    if (Resultat.bBlockingHit)
+    {
+        APreuveNettoyable* Preuve =
+            Cast<APreuveNettoyable>(Resultat.GetActor());
+
+        if (Preuve)
+        {
+            PeutNettoyer = true;
+        }
+    }
+    MettreAJourTexteInteraction(PeutNettoyer);
+
+    DrawDebugLine(
+        GetWorld(),
+        Debut,
+        Fin,
+        FColor::Green,
+        false,
+        0.0f,
+        0,
+        1.5f
+    );
 }
 
 void UComposantNettoyage::TenterNettoyage()
@@ -77,7 +132,15 @@ void UComposantNettoyage::TenterNettoyage()
 
         if (Preuve)
         {
+
             Preuve->Essuyer();
+
+            const float Progression = Preuve->ProgressionNettoyage;
+
+            UE_LOG(LogTemp, Warning, TEXT("Progression nettoyage : %f"), Progression);
+
+            OnProgressionNettoyageChanged.Broadcast(Progression);
+
         }
     }
 
@@ -91,4 +154,34 @@ void UComposantNettoyage::TenterNettoyage()
         0,
         1.5f
     );
+}
+
+void UComposantNettoyage::DefinirWidgetInteraction(UUserWidget* Widget)
+{
+    WidgetInteraction = Widget;
+}
+
+void UComposantNettoyage::MettreAJourTexteInteraction(bool Afficher)
+{
+    if (!WidgetInteraction)
+    {
+        return;
+    }
+
+    UFunction* Fonction = WidgetInteraction->FindFunction(
+        FName("AfficherInteraction")
+    );
+
+    if (Fonction)
+    {
+        struct FParametresInteraction
+        {
+            bool Afficher;
+        };
+
+        FParametresInteraction Parametres;
+        Parametres.Afficher = Afficher;
+
+        WidgetInteraction->ProcessEvent(Fonction, &Parametres);
+    }
 }
