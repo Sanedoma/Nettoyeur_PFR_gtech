@@ -20,3 +20,10 @@
 
 ## D005 — Une branche Git par tâche, validation humaine avant merge — 2026-11-11
 **Décision :** `tache/T00X-nom` → QA → validation du développeur → merge dans `main`.
+
+## D006 — Plugin EngineWire activé et association moteur « 5.7 » — 2026-11-12
+**Changement (`Nettoyeur.uproject`) :**
+- `EngineAssociation` : `{527292F9-4D19-AC8B-211D-A39DB3EF0083}` → `"5.7"`. L'identifiant entre accolades désignait une installation précise du moteur enregistrée sur ce PC ; `"5.7"` désigne la version 5.7 installée par l'Epic Games Launcher, ce qui rend le projet ouvrable sur n'importe quel PC qui a UE 5.7. Ce n'est **pas** une migration de version (D001 reste valable : 5.7.4).
+- Ajout du plugin **EngineWire** (activé, Win64/Mac/Linux) : il permet aux agents de piloter l'éditeur ouvert par MCP (inspection d'assets, Play, captures).
+**Raison :** outillage du workflow agentique (D004) ; changement fait par le développeur.
+**Équivalent manuel :** Edit → Plugins → chercher « EngineWire » → cocher *Enabled* → redémarrer l'éditeur. L'association moteur se change par clic droit sur `Nettoyeur.uproject` → *Switch Unreal Engine version…* → 5.7.
