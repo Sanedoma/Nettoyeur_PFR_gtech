@@ -24,7 +24,7 @@ Entre les **étapes 2 et 3** (§11 : interaction générique + manipulation phys
 | `L_Maison01` | Niveau de test « première maison » (1 preuve, pas d'objet Pull/Grab), référencé par rien | 🟡 Inutilisé pour l'instant |
 | `BP_ObjetGrab_Test1` | Profil [Pull] (pas Grab), racine Geometry Collection vide, placé dans aucun niveau | ❌ Mal configuré |
 | `BP_FirstPersonCharacter_Backup` | Sauvegarde d'avant le reparentage (parent `Character`), référencée par rien | ❓ À garder ou supprimer : **décision du développeur** |
-| Plugin EngineWire (pilotage de l'éditeur par MCP) | `Nettoyeur.uproject` (modification non commitée, hors T000) | 🟡 Actif localement, à documenter et commiter séparément |
+| Plugin EngineWire (pilotage de l'éditeur par MCP) | `Nettoyeur.uproject` (voir `decisions.md` D006) | ✅ Actif |
 
 Détail complet : `doc/agents/editeur-contenu.md` (T000 partie A) et `doc/agents/gameplay-cpp.md` (T000 partie B).
 
@@ -54,7 +54,7 @@ Lancer, accroupissement, Evidence Component, registre/Subsystem, score, contenan
 | B2 | Grab : aucun objet [Grab], `BP_ObjetGrab_Test1` mal configuré, relâcher le clic gauche ne lâche pas | T002 |
 
 ## Points en attente du développeur
-- `Nettoyeur.uproject` : `EngineAssociation` → `"5.7"` + plugin EngineWire. Non commité ; à commiter séparément avec une entrée dans `decisions.md`.
+- ~~`Nettoyeur.uproject`~~ : commité séparément le 2026-11-12, voir `decisions.md` D006.
 - Fichier non suivi `Content/__ExternalActors__/FirstPerson/Lvl_FirstPerson/0/I6/M8RK6YKWGV6E3Q8C5UHZX3.uasset` (un PointLight dans `Lvl_FirstPerson`) : garder ou supprimer ?
 - `BP_FirstPersonCharacter_Backup` : garder ou supprimer ?
 
