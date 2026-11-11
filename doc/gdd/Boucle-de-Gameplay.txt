@@ -1,0 +1,37 @@
+Start:
+menu de démarrage (boutique pour de l'équipement / tenu, option, carte des niveaux, etc)
+plusieur outil de nettoyage stocker dans le Vanne à chaque début de mission (Serpillière, aspirateur, peinture, karcher, gants, sac de poubelle, lumière violette, PC dans le Vanne, produit chimique pour le sol et les vitres, )
+récap des pièces à nettoyer, des preuves à l'intérieur, et des tache à faire pour effacer les traces du passage du joueur et de l’assassin dans le vanne
+Update:
+Conduir un van
+entrer et sortir de la maison
+nettoyer les tâches de sangs / de bottes / etc
+cacher des objets
+nettoyer des empreintes
+casser des objets fragile (vase, assiette, etc) 
+peindre le sol et les murs
+déplacer les meubles
+Nettoyer / changer les vitres
+Couper le courant
+planter des plantes (gazon, fleurs, petits arbres) -> attention aux pots
+se cacher (dans les armoires, s'accroupit)
+éliminer les inspecteurs
+poser des piège (ex: passer la serpillière avec un produit spécial qui fait glisser les inspecteurs) pour détourner l’attention
+pirater les caméra de surveillance depuis le vanne en branchant une clés
+utiliser du gaz somnifère (piège possible / efficace sur les humains et les animaux)
+passer du déshaudorant 
+détacher les tissues (tapies, canapés, rideau)
+placer des tableau sur les murs
+placer les outils dans une bar d’inventaire qui nous alourdis -> moins rapide -> plus course poursuite possible si repérer
+se faire intercepter par la police et contrôler (Random) 
+déteindre des tissue
+End:
+Il y’a un examen de la scène de par un ou des inspecteurs qui vont examiné tous ce qui est dans leur champs de vision et notée toutes les preuves avec des indication de décisivité (ex: couteau taché = 4, tache de sang de la victime = 2 , empreinte sur le couteau ou ailleurs = 7)
+condition de défaite:
+être repéré par un policier / inspecteur
+laisser trop d’indice sur la scène de crime
+se faire attraper par les flics en extérieur
+
+Condition de victoire:
+Réussir à s’échapper dans la zone de repli sans se faire attraper
+rester cacher jusqu'à la fin de l’inspection policière
