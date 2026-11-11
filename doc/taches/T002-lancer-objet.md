@@ -29,3 +29,7 @@ Terminer l'étape 3 : pouvoir lancer un objet saisi avec Grab, de façon prévis
 - [ ] L'objet lancé ne traverse pas les murs à force maximale (tester contre un mur proche).
 - [ ] Grab, Pull, Release, nettoyage inchangés.
 - [ ] Journal conforme (notion d'impulsion, masse, `AddImpulse`, Input Action / Mapping Context).
+
+## Hérité de T000 (ajouté par l'orchestrateur, 2026-11-12)
+- Grab non testable aujourd'hui (B2) : aucun objet [Grab] ; `BP_ObjetGrab_Test1` a le profil [Pull] et une racine Geometry Collection vide ; relâcher le clic gauche ne lâche pas (nœud `ReleaseGrab` non branché). À régler avant de tester le lancer.
+- Dette à évaluer ici : n° 8 à 12 (`doc/agents/gameplay-cpp.md` §2.9). Les n° 8 et 9 bloquent un vrai test de Grab/Pull.

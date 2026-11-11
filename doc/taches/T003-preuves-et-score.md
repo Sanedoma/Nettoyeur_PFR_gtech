@@ -33,3 +33,6 @@ Brancher le nettoyage (T004), objet déplacé par comparaison de transform (tâc
 - [ ] Un acteur détruit est retiré du registre et le score se met à jour.
 - [ ] Tests : zéro preuve, une preuve complète, une partielle, une neutralisée, deux preuves de gravités différentes.
 - [ ] Compilation sans nouvel avertissement ; journal conforme (notions : World Subsystem, cycle de vie BeginPlay/EndPlay, `TArray`, `TWeakObjectPtr`, delegate, formule commentée).
+
+## Hérité de T000 (ajouté par l'orchestrateur, 2026-11-12)
+- Dette n° 3 (état/apparence mélangés) et n° 14 (progression par preuve et non totale → « mission terminée » à la première preuve, logique en Blueprint dans `BP_FirstPersonCharacter`).

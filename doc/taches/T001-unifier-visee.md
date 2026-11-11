@@ -34,3 +34,8 @@ Une seule source de vérité pour « ce que le joueur vise » : `UInteractionCom
 - [ ] Grab et Pull inchangés.
 - [ ] Compilation sans nouvel avertissement.
 - [ ] Journal conforme à `doc/CONVENTION.md` (notamment : delegate, binding, pourquoi supprimer un double trace).
+
+## Hérité de T000 (ajouté par l'orchestrateur, 2026-11-12)
+- T000 confirme qu'**aucun Blueprint n'appelle** `APersonnageNettoyeur::TenterNettoyage()` : le point 3 peut être appliqué.
+- Dette à traiter ici (voir `doc/agents/gameplay-cpp.md` §2.9 et `doc/00_etat-projet.md`) : n° 1, 2, 4, 5, 7, 13, 16 ; n° 15 au passage, sans élargir le périmètre.
+- Côté Blueprint (B1) : décrire au développeur, nœud par nœud, le retrait du bloc mort Line Trace + Print String et des Print String de debug de `MettreAJourProgression` dans `BP_FirstPersonCharacter`.
