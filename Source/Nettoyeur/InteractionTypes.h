@@ -11,7 +11,7 @@ enum class EInteractionType : uint8
     Grab     UMETA(DisplayName = "Saisir"),
     Push     UMETA(DisplayName = "Pousser"),
     Pull     UMETA(DisplayName = "Tirer"),
-    Drag     UMETA(DisplayName = "Traîner"),
+    Drag     UMETA(DisplayName = "TraÃ®ner"),
     Launch   UMETA(DisplayName = "Lancer"),
     Open     UMETA(DisplayName = "Ouvrir"),
     Close    UMETA(DisplayName = "Fermer"),

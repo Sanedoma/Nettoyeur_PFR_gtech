@@ -1,6 +1,6 @@
 # T000 — Vérifier la config éditeur et documenter l'existant
 
-**Statut :** À faire
+**Statut :** Terminé — validé par le développeur le 2026-11-12
 **Agents :** `editeur-contenu` (partie A), puis `gameplay-cpp` (partie B)
 **Branche :** `tache/T000-verification-existant`
 **Étape du GDD :** préalable (§10.1 : « le code actuel doit être examiné avant de choisir les signatures définitives »)
@@ -28,9 +28,16 @@ Vérifier et documenter :
 Toute correction de la dette technique (traitée en T001+).
 
 ## Critères d'acceptation
-- [ ] `doc/agents/editeur-contenu.md` décrit les 8 points de la partie A, graphes nœud par nœud.
-- [ ] `doc/agents/gameplay-cpp.md` explique chaque classe existante et leurs liens.
-- [ ] `doc/notions.md` contient au moins les notions listées en B.2, chacune avec un lien.
-- [ ] `InteractionTypes.h` est en UTF-8 ; le projet compile ; « Traîner » s'affiche correctement dans l'éditeur.
-- [ ] Non-régression : nettoyage, Grab et Pull fonctionnent comme avant.
-- [ ] L'orchestrateur a mis à jour `doc/00_etat-projet.md` (lignes ❓ / 🟡 levées).
+- [x] `doc/agents/editeur-contenu.md` décrit les 8 points de la partie A, graphes nœud par nœud. *(QA 2026-11-12)*
+- [x] `doc/agents/gameplay-cpp.md` explique chaque classe existante et leurs liens. *(QA 2026-11-12)*
+- [x] `doc/notions.md` contient au moins les notions listées en B.2, chacune avec un lien. *(QA 2026-11-12 : 40/40 ancres résolues)*
+- [x] `InteractionTypes.h` est en UTF-8 ; le projet compile ; « Traîner » s'affiche correctement dans l'éditeur. *(QA : UTF-8 ✔ et compilation ✔ ; affichage « Traîner » validé par le développeur 2026-11-12)*
+- [x] Non-régression : nettoyage, Grab et Pull fonctionnent comme avant. *(nettoyage et Pull validés par le développeur 2026-11-12 ; Grab non testable en l'état — aucun objet [Grab], voir partie A point 6, reporté)*
+- [x] L'orchestrateur a mis à jour `doc/00_etat-projet.md` (lignes ❓ / 🟡 levées). *(2026-11-12)*
+
+## À vérifier par `qa` (partie B)
+1. **Éditeur fermé**, compiler avec Build.bat (`CLAUDE.md` §6) : 0 erreur, 0 nouvel avertissement.
+2. `git diff Source/` : seule la ligne 14 de `InteractionTypes.h` change (`Drag … "Traîner"`), octet `EE` → `C3 AE` ; `file` indique UTF-8, CRLF conservé.
+3. Dans l'éditeur : `BP_ObjetPull_Test` → `InteractionProfile` → *Allowed Interactions* → la liste déroulante affiche « Traîner » (ne rien enregistrer).
+4. Non-régression en jeu (`Lvl_FirstPerson`) : 4 × E sur `BP_PreuveNettoyable` → barre par quarts puis disparition ; R maintenu sur `BP_ObjetPull_Test` → glisse au sol, relâcher R → lâché.
+5. Relecture : `doc/agents/gameplay-cpp.md` (entrée T000 partie B) couvre les 6 classes et leur collaboration ; `doc/notions.md` section C++ contient les 14 notions de B.2 ; les ancres des liens fonctionnent ; cliquer quelques liens de doc officielle (non vérifiables automatiquement).
