@@ -59,7 +59,7 @@ Lancer, accroupissement, Evidence Component, registre/Subsystem, score, contenan
 - `BP_FirstPersonCharacter_Backup` : garder ou supprimer ?
 
 ## Tâche en cours
-Aucune.
+**T001** — Unifier la visée et faire passer le nettoyage par le profil (`gameplay-cpp`, branche `tache/T001-unifier-visee`, démarrée le 2026-11-13).
 
 ## Prochaine tâche
 **T001** — Unifier la visée et faire passer le nettoyage par le profil.
@@ -68,7 +68,7 @@ Aucune.
 | Tâche | Titre | Agent | Statut |
 |---|---|---|---|
 | T000 | Vérifier la config éditeur + documenter l'existant | editeur-contenu, gameplay-cpp | ✅ Terminé (2026-11-12) |
-| T001 | Unifier la visée et faire passer le nettoyage par le profil | gameplay-cpp | À faire |
+| T001 | Unifier la visée et faire passer le nettoyage par le profil | gameplay-cpp | En cours |
 | T002 | Ajouter le lancer d'objet | gameplay-cpp + editeur-contenu | À faire |
 | T003 | Composant de preuve + registre + score en debug | gameplay-cpp | À faire |
 | T004 | Brancher le nettoyage sur l'intensité des preuves | gameplay-cpp + editeur-contenu | À faire |

@@ -2,12 +2,21 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "InteractionTypes.h"
 #include "InteractionComponent.generated.h"
 
 class UPhysicsHandleComponent;
 class UPrimitiveComponent;
 
-/** Gère la détection et la saisie physique Pull des objets qui l'autorisent. */
+/** Diffusé quand l'acteur visé change (NewFocus vaut nullptr quand on ne vise plus rien). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnFocusChanged, AActor*, NewFocus);
+
+/**
+ * Seule source de la visée du joueur : un sweep par image désigne l'acteur visé
+ * (CurrentFocus). Gère aussi la saisie physique Pull / Grab des objets qui l'autorisent.
+ * Les autres composants (nettoyage…) lisent GetCurrentFocus() ou écoutent OnFocusChanged
+ * au lieu de lancer leur propre rayon.
+ */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class NETTOYEUR_API UInteractionComponent : public UActorComponent
 {
@@ -16,17 +25,36 @@ class NETTOYEUR_API UInteractionComponent : public UActorComponent
 public:
     UInteractionComponent();
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Pull", meta = (ClampMin = "1.0"))
+    /** Portée de la visée (cm), partagée par toutes les interactions. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Visee", meta = (ClampMin = "1.0"))
     float TraceDistance = 300.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Pull", meta = (ClampMin = "1.0"))
+    /** Distance devant le joueur à laquelle un objet tenu est maintenu (Pull et Grab). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Tenir", meta = (ClampMin = "1.0"))
     float HoldDistance = 150.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Pull", meta = (ClampMin = "0.1"))
+    /** Vitesse à laquelle l'objet tenu rejoint sa position voulue (Pull et Grab). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Tenir", meta = (ClampMin = "0.1"))
     float HoldInterpSpeed = 6.f;
+
+    /** Dessine la visée à chaque image (trait vert = touche, rouge = rien). Faux par défaut. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Debug")
+    bool bAfficherDebug = false;
+
+    /** Diffusé à chaque changement de cible visée. */
+    UPROPERTY(BlueprintAssignable, Category = "Interaction|Visee")
+    FOnFocusChanged OnFocusChanged;
 
     /** Le Physics Handle est créé par le personnage propriétaire. */
     void SetPhysicsHandle(UPhysicsHandleComponent* InPhysicsHandle);
+
+    /** Acteur actuellement visé (nullptr si rien). */
+    UFUNCTION(BlueprintPure, Category = "Interaction|Visee")
+    AActor* GetCurrentFocus() const;
+
+    /** Vrai si l'acteur visé a un profil d'interactions qui autorise Interaction. */
+    UFUNCTION(BlueprintPure, Category = "Interaction|Visee")
+    bool CanFocusPerform(EInteractionType Interaction) const;
 
     /** Saisit la cible actuelle si son profil autorise Pull et si elle simule la physique. */
     UFUNCTION(BlueprintCallable, Category = "Interaction|Pull")
@@ -36,11 +64,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Interaction|Grab")
     void Grab();
 
-    /** Relâche simplement l'objet tenu, sans impulsion de lancer. */
-    UFUNCTION(BlueprintCallable, Category = "Interaction|Pull")
+    /** Relâche simplement l'objet tenu (Pull ou Grab), sans impulsion de lancer. */
+    UFUNCTION(BlueprintCallable, Category = "Interaction|Tenir")
     void ReleaseGrab();
 
-    UFUNCTION(BlueprintPure, Category = "Interaction|Pull")
+    UFUNCTION(BlueprintPure, Category = "Interaction|Tenir")
     bool IsHoldingObject() const;
 
 protected:
@@ -61,7 +89,14 @@ private:
     FRotator HeldTargetRotation = FRotator::ZeroRotator;
 
     void UpdateFocus();
+    void SetCurrentFocus(AActor* NewFocus);
     void UpdateHold(float DeltaTime);
-    FVector GetAimDirection() const;
+
+    /**
+     * Point de vue du joueur (caméra). Sans PlayerController, renvoie la position et
+     * la rotation de l'acteur propriétaire et retourne false.
+     */
+    bool GetViewPoint(FVector& OutLocation, FRotator& OutRotation) const;
+
     UPrimitiveComponent* GetFocusPrimitive() const;
 };

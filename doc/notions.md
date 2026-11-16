@@ -30,8 +30,13 @@
 - **`FindFunction` + `ProcessEvent`** — appeler une fonction (Blueprint) par son nom via la réflexion ; fragile si la signature change → [explication](agents/gameplay-cpp.md#notion-processevent)
 - **`UE_LOG` et `DrawDebugLine`** — écrire dans le journal ; dessiner un trait de debug (derrière un `bDebug`) → [explication](agents/gameplay-cpp.md#notion-ue-log-drawdebug)
 - **Encodage des sources (UTF-8 vs Windows-1252, BOM)** — pourquoi un accent s'affiche `�` et comment convertir → [explication](agents/gameplay-cpp.md#notion-encodage-utf8)
+- **Paramètre de sortie par référence (`FVector& OutX`)** — rendre plusieurs valeurs en écrivant dans les variables de l'appelant → [explication](agents/gameplay-cpp.md#notion-parametre-sortie-reference)
+- **`UPROPERTY(Transient)`** — variable vue par le ramasse-miettes mais jamais sauvegardée (pointeur trouvé en jeu, cache) → [explication](agents/gameplay-cpp.md#notion-transient)
+- **Abonnement C++ à un delegate : `AddDynamic` / `RemoveDynamic`, `EndPlay`** — brancher au BeginPlay, débrancher à l'EndPlay ; la fonction abonnée est une `UFUNCTION` → [explication](agents/gameplay-cpp.md#notion-adddynamic-endplay)
+- **Signature d'une `UFunction` (`FProperty`, `CastField`, `NumParms`, `ParmsSize`, `FMemory_Alloca`)** — vérifier les paramètres d'une fonction Blueprint avant `ProcessEvent` → [explication](agents/gameplay-cpp.md#notion-signature-ufunction)
 
 ## Moteur et architecture (Actors, Components, Subsystems…)
+- **Source unique de vérité ; piloté par événement vs sondage** — calculer une donnée à un seul endroit, ne prévenir qu'au changement → [explication](agents/gameplay-cpp.md#notion-source-unique-evenement)
 - **Panneau Composants, composant hérité ou ajouté** — arbre des composants de scène, composants logiques, composant racine → [explication](agents/editeur-contenu.md#notion-composants-herites)
 - **Game Mode (Default Pawn, PlayerController)** — l'acteur qui choisit les classes du joueur et les règles → [explication](agents/editeur-contenu.md#notion-game-mode)
 - **Bind Event to + Custom Event** — s'abonner en Blueprint à un événement diffusé par le C++ → [explication](agents/editeur-contenu.md#notion-bind-event)

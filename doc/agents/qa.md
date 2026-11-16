@@ -4,6 +4,86 @@
 
 ---
 
+## QA T001 — Unifier la visée et faire passer le nettoyage par le profil d'interaction — 2026-11-13
+**Verdict :** ✅ Validé QA pour tout ce qui est vérifiable sans lancer le jeu (compilation, code, périmètre, doc). Les tests en jeu (prompt, 4 essuyages, objet sans Wipe, debug, Pull/Grab) **n'ont pas été exécutés** : l'éditeur était fermé et les outils MCP Unreal n'étaient pas utilisables. Ils restent à faire par le développeur (procédure en bas).
+
+**Branche :** `tache/T001-unifier-visee` (pas de changement de branche, aucun commit).
+
+### Compilation
+- Éditeur fermé : aucun processus `Unreal*` / `LiveCoding*` en cours (`Get-Process`).
+- Méthode : Build.bat (`CLAUDE.md` §6) depuis PowerShell : `NettoyeurEditor Win64 Development -Project=... -WaitMutex`.
+- 1er lancement : `Target is up to date` / `Result: Succeeded` (les binaires avaient déjà été produits par `gameplay-cpp`). Cela ne prouve rien sur les avertissements, donc :
+- 2e lancement après avoir seulement mis à jour la date de modification des `.cpp` de `Source/Nettoyeur/` (contenu inchangé) pour forcer la recompilation : `[1/10]` à `[7/10] Compile` (les 7 `.cpp` du module), `[8/10]`–`[9/10] Link` `.lib` / `.dll`, `[10/10] WriteMetadata`. **`Result: Succeeded`, code de sortie 0, 0 erreur, 0 ligne `warning`.**
+
+### Périmètre
+- `git status` : modifiés `Source/Nettoyeur/{InteractionComponent,ComposantNettoyage,PersonnageNettoyeur}.{h,cpp}` (= les 6 fichiers autorisés), `doc/agents/gameplay-cpp.md`, `doc/notions.md`, `doc/taches/T001-unifier-visee.md`, `doc/00_etat-projet.md`.
+- `doc/00_etat-projet.md` : seulement le passage de T001 en « En cours » — fichier de l'orchestrateur, non mentionné dans le journal de `gameplay-cpp` ; à confirmer par l'orchestrateur que c'est bien lui.
+- Non suivi : `Content/__ExternalActors__/FirstPerson/Lvl_FirstPerson/0/I6/M8RK6YKWGV6E3Q8C5UHZX3.uasset`, daté du 2026-11-11 : **antérieur à T001**, déjà signalé en QA T000. Ne doit pas partir dans le commit T001 sans décision.
+- Rien sous `Saved/`, `Intermediate/`, `Binaries/` dans le suivi Git. Aucun `.uasset` / `.umap` modifié, aucune config modifiée.
+- Encodage : les 6 sources en UTF-8 (ou ASCII) sans BOM, CRLF (`file`, 3 premiers octets `#in`).
+
+### Critères d'acceptation
+- [x] Un seul trace/sweep de visée par frame dans tout le projet — `grep -rnE "LineTrace|Sweep|Overlap" Source/` : seulement `SweepSingleByChannel` (`InteractionComponent.cpp:73`, `UpdateFocus`, appelé par `TickComponent` et une fois au `BeginPlay`) et `LineTraceMultiByChannel` (`InteractionComponent.cpp:241`, `UpdateHold`) qui cherche le sol sous un objet tiré, uniquement pendant un Pull : ce n'est pas une visée. `UComposantNettoyage` : plus de trace, `bCanEverTick = false`, plus de `TickComponent`.
+- [ ] Viser une `BP_PreuveNettoyable` affiche le prompt ; ne plus la viser le masque — **test en jeu à faire par le développeur.** Lecture du code : `SetCurrentFocus` diffuse `OnFocusChanged` seulement au changement → `GererChangementCible` → `MettreAJourTexteInteraction(CanFocusPerform(Wipe))`. État initial poussé par `DefinirWidgetInteraction`. Profil : `AllowedInteractions` n'apparaît dans aucun asset sauf `BP_ObjetPull_Test` et `BP_ObjetGrab_Test1` (recherche de texte dans `Content/`) → `BP_PreuveNettoyable` et son instance dans le niveau héritent du constructeur C++ = [Wipe]. Non vérifié dans l'éditeur (MCP indisponible, éditeur fermé).
+- [ ] Essuyer 4 fois → 0.25 → 0.5 → 0.75 → 1.0 et disparition — **test en jeu à faire.** Lecture : `APreuveNettoyable::Essuyer()` inchangé (+`ProgressionParEssuyage` = 0.25, plafonné à 1, à 1.0 : caché + collision coupée) ; `OnProgressionNettoyageChanged.Broadcast(Progression)` toujours appelé à chaque essuyage réussi, **sans condition de debug**.
+- [ ] Un objet sans `Wipe` ne peut pas être essuyé et n'affiche pas le prompt — **test en jeu à faire.** Lecture : `TenterNettoyage` sort immédiatement si `!PeutNettoyerCible()` ; le prompt reçoit `false`.
+- [ ] Pas de ligne de debug par défaut ; `bAfficherDebug = true` la réaffiche — **test en jeu à faire.** Lecture : aucun `DrawDebug*` hors du bloc `if (bAfficherDebug)` de `UpdateFocus` ; `bAfficherDebug = false` par défaut sur les deux composants.
+- [ ] Grab et Pull inchangés — **test en jeu à faire (Pull ; Grab toujours non testable, dette B2).** Lecture du diff : seules les vérifications de profil sont factorisées dans `CanFocusPerform` (même condition qu'avant : profil présent et `CanPerform`), et le calcul du point de vue dans `GetViewPoint` (même valeur de secours qu'avant : position/rotation de l'acteur si pas de PlayerController). Ordre des tests, saisie, interpolation, recherche du sol, lâcher au bord du vide, refus du saut : identiques.
+- [x] Compilation sans nouvel avertissement — voir Compilation : 0 erreur, 0 avertissement après recompilation forcée des 7 `.cpp`.
+- [x] Journal conforme à `doc/CONVENTION.md` — voir Relecture documentation.
+
+### Non-régression
+Pas testée en jeu. Relecture du code uniquement :
+- Nettoyage : même décision de fond (seule `APreuveNettoyable` sait s'essuyer), désormais conditionnée au profil [Wipe], que la preuve a par défaut. Même portée (300 cm, `TraceDistance`).
+- **Différence voulue et documentée :** le prompt et l'essuyage utilisent le sweep sphère de 10 cm au lieu d'un rayon fin → au bord d'une preuve, le prompt peut apparaître un peu plus tôt qu'avant.
+- **Différence mineure :** la ligne « Progression nettoyage : … » n'est plus écrite par défaut dans l'Output Log (avant : toujours, en jaune `Warning`) ; elle passe en `Log` derrière `ComposantNettoyage → bAfficherDebug`. Documenté (journal §2.3 d).
+- Blueprints : `APersonnageNettoyeur::TenterNettoyage` supprimée, `WidgetInteraction` passé en `BlueprintReadOnly`. Recherche de texte dans `BP_FirstPersonCharacter.uasset` : `TenterNettoyage` apparaît une fois (T000 : c'est celui de `ComposantNettoyage`), `WidgetInteraction` n'apparaît que dans `DefinirWidgetInteraction` et `WidgetInteractionComponent` → aucun nœud *Set Widget Interaction*. Forte présomption que les Blueprints compilent, **à confirmer en ouvrant l'éditeur** (point 9 de la fiche).
+
+### Cas limites testés (par lecture du code, pas en jeu)
+- Pas de cible : `CanFocusPerform` renvoie `false` si `CurrentFocus` est nul → E sans effet, prompt masqué.
+- Cible hors portée : pas de touche du sweep → `SetCurrentFocus(nullptr)` → prompt masqué.
+- Cible incompatible (pas de profil, ou profil sans Wipe) : `false` → E sans effet, pas de prompt.
+- Cible avec Wipe mais pas une `APreuveNettoyable` : prompt affiché mais E sans effet (le `Cast` échoue proprement). Aucun cas dans le projet aujourd'hui ; signalé par l'agent (§7), à régler en T003/T004.
+- Preuve finie : cachée + collision coupée → l'image suivante le sweep ne la touche plus → `OnFocusChanged` → prompt masqué. E pressé une seconde fois **dans la même image** (pratiquement impossible) : `Essuyer()` ne fait rien (`EstNettoyee`), mais la progression 1.0 serait rediffusée une fois. Sans conséquence aujourd'hui, à garder en tête quand le score écoutera ce delegate.
+- Personnage sans `InteractionComponent` : message `Warning` unique au `BeginPlay`, tout le reste testé contre `nullptr` → pas de plantage.
+- Personnage pas encore possédé : `GetViewPoint` renvoie `false` → rien de visé (comme avant).
+- Ordre d'initialisation : les `BeginPlay` des composants passent avant l'Event BeginPlay du Blueprint, donc l'abonnement existe avant `DefinirWidgetInteraction` ; un changement de cible manqué avant l'abonnement est rattrapé par l'état poussé dans `DefinirWidgetInteraction`.
+- Désabonnement : `RemoveDynamic` dans `EndPlay`, mêmes arguments que `AddDynamic`, protégé par `if (ComposantInteraction)` ; abonnement unique (BeginPlay seulement). `GererChangementCible` est bien une `UFUNCTION()` avec la signature `AActor*` du delegate.
+- `ProcessEvent` : plus sûr qu'avant (vérifie `NumParms == 1`, un `FBoolProperty` « Afficher » avec `CPF_Parm`, bloc de `ParmsSize` octets remis à zéro). `WidgetInteraction` nul → sortie immédiate. Fonction absente → sortie silencieuse (comme avant).
+
+### Relecture code
+- Lisible, commenté en français, identifiants sans accent, catégories `UPROPERTY` cohérentes, pas d'abstraction inutile (`CanFocusPerform` a 3 utilisateurs réels).
+- Pas de Tick inutile (le nettoyage n'en a plus), pas de `DrawDebug` hors debug, `GetAimDirection` supprimé (aucun appel restant), plus de doublon de calcul du point de vue.
+- Pointeurs vérifiés partout (`GetOwner`, `World`, `ComposantInteraction`, `CurrentFocus`, `WidgetInteraction`, `Fonction`, `Preuve`).
+- Remarque (non bloquante) : deux booléens `bAfficherDebug` (un sur `InteractionComponent` pour le trait de visée, un sur `ComposantNettoyage` pour le journal de progression). La fiche n'en demandait qu'un, mais chacun est rangé là où le debug est produit et la doc explique les deux. Acceptable.
+- Remarque (non bloquante, hors périmètre) : `PersonnageNettoyeur.h` inclut encore `InteractionComponent.h` / `PhysicsHandleComponent.h` au lieu de déclarations anticipées — signalé par l'agent.
+- Conforme à `doc/decisions.md` d'après la fiche (logique en C++, pas de modification de Blueprint par l'agent ; le nettoyage du graphe B1 est décrit pour le développeur).
+
+### Relecture documentation
+- Entrée T001 de `doc/agents/gameplay-cpp.md` : les 7 sections du modèle sont présentes (Configuration = « Aucune »). Fichiers modifiés listés avec le pourquoi ; code expliqué fichier par fichier avec extraits ; « pourquoi supprimer le double trace » (§2.1), delegate (`OnFocusChanged`, lien vers la notion existante) et binding C++ (`AddDynamic` / `RemoveDynamic` / `EndPlay`) expliqués, comme demandé par la fiche.
+- Étapes éditeur écrites comme un humain (B1 nœud par nœud dans `BP_FirstPersonCharacter` et `WBP_Interaction`, réglages de debug, vérification du profil). La vérification du profil faite par recherche de texte est clairement présentée comme telle, avec l'équivalent manuel.
+- Notions nouvelles (source unique / événement vs sondage, paramètre de sortie par référence, `Transient`, `AddDynamic`/`EndPlay`, signature d'une `UFunction`) : expliquées dans le journal avec une ancre **et** ajoutées à `doc/notions.md`. Les liens vers des notions existantes (`delegate-dynamique-multicast`, `tobjectptr`, `declaration-anticipee`, `ue-log-drawdebug`, `tick`) pointent vers des ancres qui existent.
+- Petite inexactitude : le §1 dit « 6 notions ajoutées », `doc/notions.md` en reçoit **5**. Sans impact.
+- Le journal annonce honnêtement « non testé en jeu ».
+
+### Procédure de validation pour le développeur
+Préparation : ouvre le projet dans Unreal (le C++ a été recompilé, pas besoin de recompiler).
+1. **Blueprints** : ouvre `Content/FirstPerson/Blueprints/BP_FirstPersonCharacter` → bouton **Compiler** : aucune erreur (pas de nœud « Tenter Nettoyage » cassé côté personnage, pas de *Set Widget Interaction* en erreur). Fais de même avec `Content/Nettoyeur/WBP_Interaction`. Ferme sans enregistrer si rien n'a changé.
+2. **Profil** : ouvre `Content/Nettoyeur/Preuves/BP_PreuveNettoyable` → panneau **Composants** → `ProfilInteractions` → **Détails** → *Allowed Interactions* contient **Essuyer**.
+3. Ouvre le niveau `Lvl_FirstPerson`, **Fenêtre (Window) → Journal de sortie (Output Log)** ouvert, puis **Play**.
+4. **Output Log au lancement** : aucun message « ComposantNettoyage : aucun InteractionComponent… » ni « …AfficherInteraction doit avoir un seul parametre… ».
+5. **Pas de debug par défaut** : aucun trait vert/rouge à l'écran en bougeant la souris.
+6. **Prompt** : vise la preuve (à moins de 3 m) → « Appuie sur E pour nettoyer » + barre apparaissent. Détourne le regard → ils disparaissent. Recommence 2–3 fois. Éloigne-toi au-delà de 3 m en visant : le prompt disparaît.
+7. **Nettoyage** : vise la preuve, appuie 4 fois sur **E** → la barre passe à 25 %, 50 %, 75 %, 100 % ; au 4e appui la preuve disparaît, le prompt se masque, « MISSION TERMINÉE ! » s'affiche (comme avant). Un 5e appui sur E dans le vide ne fait rien.
+8. **Objet sans Wipe** : relance Play, vise `BP_ObjetPull_Test` → **pas** de prompt ; appuie sur E → rien ne se passe. Test complémentaire (sans enregistrer) : arrête Play, sélectionne la preuve dans l'**Organiseur (Outliner)** → composant `ProfilInteractions` → *Allowed Interactions* → supprime l'élément **Essuyer** → Play : plus de prompt, E sans effet. Arrête Play puis **Ctrl+Z** (ou flèche jaune « réinitialiser » à côté de la liste) pour remettre Essuyer ; ne pas enregistrer le niveau modifié.
+9. **Debug de visée** : arrête Play. Dans `BP_FirstPersonCharacter` → **Composants** → `InteractionComponent` → **Détails** → **Interaction | Debug** → coche **Afficher Debug** → **Compiler** → Play : un trait vert (qui touche, avec une petite sphère) ou rouge (rien touché) suit la visée. Décoche ensuite, **Compiler**, **ne pas enregistrer coché**.
+10. **Journal de progression** (facultatif) : composant `ComposantNettoyage` → **Nettoyage | Debug** → coche **Afficher Debug** → Play → 4 × E sur la preuve → 4 lignes « Progression nettoyage : 0.250000 … 1.000000 » dans l'Output Log. Décoche ensuite.
+11. **Pull** : Play, vise `BP_ObjetPull_Test`, maintiens **R** → l'objet glisse au sol devant toi en suivant ta rotation horizontale (pas le haut/bas de la souris) ; appuie sur **Espace** en le tenant → pas de saut ; relâche **R** → l'objet est lâché. Approche-le d'un bord de vide → il est lâché et tombe.
+12. **Grab** : toujours non testable (aucun objet avec [Saisir], dette B2 / T002) — vérifier seulement que le **clic gauche** sur la preuve ou sur `BP_ObjetPull_Test` ne saisit rien.
+13. Si tout est conforme : dis-le à l'orchestrateur pour le commit `T001: unifier la visée et faire passer le nettoyage par le profil`. Décide aussi du sort du fichier non suivi `Content/__ExternalActors__/.../M8RK6YKWGV6E3Q8C5UHZX3.uasset` (antérieur à T001).
+
+---
+
 ## QA T000 — Vérifier la config éditeur et documenter l'existant — 2026-11-12
 **Verdict :** ✅ Validé QA pour ce qui est vérifiable sans éditeur. Les tests éditeur/jeu (critères 4 « Traîner » et 5 non-régression) **attendent la validation humaine** : je ne les ai pas exécutés.
 

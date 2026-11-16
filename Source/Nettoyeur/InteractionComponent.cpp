@@ -1,10 +1,11 @@
 #include "InteractionComponent.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "InteractionProfileComponent.h"
-#include "InteractionTypes.h"
 #include "PhysicsEngine/PhysicsHandleComponent.h"
 
 UInteractionComponent::UInteractionComponent()
@@ -31,44 +32,43 @@ void UInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType,
     UpdateHold(DeltaTime);
 }
 
-FVector UInteractionComponent::GetAimDirection() const
+bool UInteractionComponent::GetViewPoint(FVector& OutLocation, FRotator& OutRotation) const
 {
-    const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+    const AActor* OwnerActor = GetOwner();
+    OutLocation = OwnerActor ? OwnerActor->GetActorLocation() : FVector::ZeroVector;
+    OutRotation = OwnerActor ? OwnerActor->GetActorRotation() : FRotator::ZeroRotator;
+
+    const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
     const APlayerController* PlayerController = OwnerPawn
         ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
-
-    if (PlayerController)
+    if (!PlayerController)
     {
-        FVector ViewLocation;
-        FRotator ViewRotation;
-        PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-        return ViewRotation.Vector();
+        return false;
     }
 
-    return GetOwner() ? GetOwner()->GetActorForwardVector() : FVector::ForwardVector;
+    PlayerController->GetPlayerViewPoint(OutLocation, OutRotation);
+    return true;
 }
 
 void UInteractionComponent::UpdateFocus()
 {
-    APawn* OwnerPawn = Cast<APawn>(GetOwner());
-    APlayerController* PlayerController = OwnerPawn
-        ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
     UWorld* World = GetWorld();
+    FVector ViewLocation;
+    FRotator ViewRotation;
 
-    if (!PlayerController || !World)
+    // Sans PlayerController (personnage pas encore possédé) on ne vise rien.
+    if (!World || !GetViewPoint(ViewLocation, ViewRotation))
     {
-        CurrentFocus = nullptr;
+        SetCurrentFocus(nullptr);
         return;
     }
 
-    FVector ViewLocation;
-    FRotator ViewRotation;
-    PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
     const FVector TraceEnd = ViewLocation + ViewRotation.Vector() * TraceDistance;
 
-    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PullFocus), false);
+    FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(InteractionFocus), false);
     QueryParams.AddIgnoredActor(GetOwner());
 
+    // L'UNIQUE trace de visée du projet : tous les systèmes lisent son résultat.
     FHitResult Hit;
     const bool bHit = World->SweepSingleByChannel(
         Hit,
@@ -79,7 +79,48 @@ void UInteractionComponent::UpdateFocus()
         FCollisionShape::MakeSphere(10.f),
         QueryParams);
 
-    CurrentFocus = bHit ? Hit.GetActor() : nullptr;
+    if (bAfficherDebug)
+    {
+        // Durée 0 = une image : appelé à chaque Tick, le trait suit la visée.
+        DrawDebugLine(World, ViewLocation, bHit ? Hit.Location : TraceEnd,
+            bHit ? FColor::Green : FColor::Red, false, 0.f, 0, 1.5f);
+        if (bHit)
+        {
+            DrawDebugSphere(World, Hit.Location, 10.f, 8, FColor::Green, false, 0.f);
+        }
+    }
+
+    SetCurrentFocus(bHit ? Hit.GetActor() : nullptr);
+}
+
+void UInteractionComponent::SetCurrentFocus(AActor* NewFocus)
+{
+    if (NewFocus == CurrentFocus)
+    {
+        return;
+    }
+
+    // On ne prévient les abonnés que lorsque la cible change vraiment,
+    // pas à chaque image.
+    CurrentFocus = NewFocus;
+    OnFocusChanged.Broadcast(NewFocus);
+}
+
+AActor* UInteractionComponent::GetCurrentFocus() const
+{
+    return CurrentFocus;
+}
+
+bool UInteractionComponent::CanFocusPerform(EInteractionType Interaction) const
+{
+    if (!CurrentFocus)
+    {
+        return false;
+    }
+
+    const UInteractionProfileComponent* Profile =
+        CurrentFocus->FindComponentByClass<UInteractionProfileComponent>();
+    return Profile && Profile->CanPerform(Interaction);
 }
 
 UPrimitiveComponent* UInteractionComponent::GetFocusPrimitive() const
@@ -91,14 +132,7 @@ UPrimitiveComponent* UInteractionComponent::GetFocusPrimitive() const
 
 void UInteractionComponent::Pull()
 {
-    if (IsHoldingObject() || !PhysicsHandle || !CurrentFocus)
-    {
-        return;
-    }
-
-    const UInteractionProfileComponent* Profile =
-        CurrentFocus->FindComponentByClass<UInteractionProfileComponent>();
-    if (!Profile || !Profile->CanPerform(EInteractionType::Pull))
+    if (IsHoldingObject() || !PhysicsHandle || !CanFocusPerform(EInteractionType::Pull))
     {
         return;
     }
@@ -125,14 +159,7 @@ void UInteractionComponent::Pull()
 
 void UInteractionComponent::Grab()
 {
-    if (IsHoldingObject() || !PhysicsHandle || !CurrentFocus)
-    {
-        return;
-    }
-
-    const UInteractionProfileComponent* Profile =
-        CurrentFocus->FindComponentByClass<UInteractionProfileComponent>();
-    if (!Profile || !Profile->CanPerform(EInteractionType::Grab))
+    if (IsHoldingObject() || !PhysicsHandle || !CanFocusPerform(EInteractionType::Grab))
     {
         return;
     }
@@ -143,17 +170,9 @@ void UInteractionComponent::Grab()
         return;
     }
 
-    AActor* OwnerActor = GetOwner();
-    APawn* OwnerPawn = Cast<APawn>(OwnerActor);
-    APlayerController* PlayerController = OwnerPawn
-        ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
-
-    FVector ViewLocation = OwnerActor ? OwnerActor->GetActorLocation() : FVector::ZeroVector;
-    FRotator ViewRotation = OwnerActor ? OwnerActor->GetActorRotation() : FRotator::ZeroRotator;
-    if (PlayerController)
-    {
-        PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-    }
+    FVector ViewLocation;
+    FRotator ViewRotation;
+    GetViewPoint(ViewLocation, ViewRotation);
 
     const FVector DesiredLocation = ViewLocation + ViewRotation.Vector() * HoldDistance;
     HeldTargetRotation = Primitive->GetComponentRotation();
@@ -182,21 +201,14 @@ void UInteractionComponent::UpdateHold(float DeltaTime)
         return;
     }
 
+    FVector ViewLocation;
+    FRotator ViewRotation;
+    GetViewPoint(ViewLocation, ViewRotation);
+
     // Grab suit la position complète de la caméra, mais conserve la rotation
     // exacte de l'objet enregistrée au moment de la saisie.
     if (bIsGrabbing)
     {
-        const APawn* OwnerPawn = Cast<APawn>(OwnerActor);
-        const APlayerController* PlayerController = OwnerPawn
-            ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
-
-        FVector ViewLocation = OwnerActor->GetActorLocation();
-        FRotator ViewRotation = OwnerActor->GetActorRotation();
-        if (PlayerController)
-        {
-            PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-        }
-
         const FVector DesiredLocation = ViewLocation + ViewRotation.Vector() * HoldDistance;
         HeldTargetLocation = FMath::VInterpTo(
             HeldTargetLocation, DesiredLocation, DeltaTime, HoldInterpSpeed);
@@ -206,17 +218,6 @@ void UInteractionComponent::UpdateHold(float DeltaTime)
     }
 
     // Pull ne suit que le Yaw : le Pitch de la caméra ne soulève jamais l'objet.
-    FRotator ViewRotation = OwnerActor->GetActorRotation();
-    if (const APawn* OwnerPawn = Cast<APawn>(OwnerActor))
-    {
-        if (const APlayerController* PlayerController =
-            Cast<APlayerController>(OwnerPawn->GetController()))
-        {
-            FVector ViewLocation;
-            PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-        }
-    }
-
     const FVector HorizontalForward = FRotator(0.f, ViewRotation.Yaw, 0.f).Vector();
     const FVector OwnerLocation = OwnerActor->GetActorLocation();
     FVector DesiredLocation = OwnerLocation + HorizontalForward * HoldDistance;
