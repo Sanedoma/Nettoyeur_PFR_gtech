@@ -36,6 +36,10 @@
 - **Signature d'une `UFunction` (`FProperty`, `CastField`, `NumParms`, `ParmsSize`, `FMemory_Alloca`)** — vérifier les paramètres d'une fonction Blueprint avant `ProcessEvent` → [explication](agents/gameplay-cpp.md#notion-signature-ufunction)
 - **`TMap<Clé, Valeur>`** — dictionnaire clé → valeur (`Add`, `Find`, boucle sur `TPair`) ; éditable dans les Details, ordre = ordre d'ajout → [explication](agents/gameplay-cpp.md#notion-tmap)
 - **`FText`, `FString`, `LOCTEXT`** — texte affiché au joueur (traduisible) vs chaîne du code ; `LOCTEXT_NAMESPACE`, `FText::Join` → [explication](agents/gameplay-cpp.md#notion-ftext-loctext)
+- **Fonction membre `static`** — fonction de classe sans `this`, ne dépend que de ses paramètres → [explication](agents/gameplay-cpp.md#notion-static-membre)
+- **`constexpr`** — constante connue à la compilation, remplace un « nombre magique » → [explication](agents/gameplay-cpp.md#notion-constexpr)
+- **`IsValid(Objet)`** — non nul **et** pas en cours de destruction ; pour un pointeur gardé d'une image à l'autre → [explication](agents/gameplay-cpp.md#notion-isvalid)
+- **`Bounds` (`FBoxSphereBounds`)** — boîte englobante alignée monde : `Origin` (centre), `BoxExtent` (demi-taille) ; centre ≠ pivot → [explication](agents/gameplay-cpp.md#notion-bounds)
 
 ## Moteur et architecture (Actors, Components, Subsystems…)
 - **Source unique de vérité ; piloté par événement vs sondage** — calculer une donnée à un seul endroit, ne prévenir qu'au changement → [explication](agents/gameplay-cpp.md#notion-source-unique-evenement)
@@ -45,12 +49,16 @@
 
 ## Physique
 - **Simulate Physics et Collision Presets** — objet piloté par la physique ; BlockAllDynamic vs PhysicsActor → [explication](agents/editeur-contenu.md#notion-collision-physique)
+- **Impulsion, masse et `AddImpulse` (`bVelChange`)** — coup instantané vs force continue ; à impulsion égale un objet lourd part moins vite ; kg, cm/s → [explication](agents/gameplay-cpp.md#notion-impulsion-addimpulse)
+- **CCD (Continuous Collision Detection)** — vérifier le trajet entre deux pas de physique pour qu'un objet rapide ne traverse pas un mur ; `SetUseCCD` / *Use CCD* → [explication](agents/gameplay-cpp.md#notion-ccd)
+- **Masse d'un corps physique (calculée ou imposée, *Mass (kg)*)** — masse déduite du volume, ou imposée par la case *Mass (kg)* pour un comportement prévisible → [explication](agents/editeur-contenu.md#notion-masse-override)
 
 ## Éditeur (Content Browser, Blueprints, Details…)
 - **Blueprint enfant (classe parente)** — un Blueprint hérite de sa classe parente C++ ; reparentage → [explication](agents/editeur-contenu.md#notion-blueprint-enfant)
 - **Class Defaults** — valeurs de départ des variables de l'acteur, différent des réglages d'un composant → [explication](agents/editeur-contenu.md#notion-class-defaults)
 - **Event Graph, broches d'exécution et de données** — ordre d'exécution, nœud non relié = jamais exécuté, nœuds purs → [explication](agents/editeur-contenu.md#notion-event-graph)
 - **Maps & Modes et World Settings (GameMode Override)** — carte/Game Mode globaux vs par niveau → [explication](agents/editeur-contenu.md#notion-maps-modes-world-settings)
+- **Changer le composant racine d'un Blueprint (Make New Root)** — la racine porte la position de l'acteur ; un mesh qui simule doit être racine → [explication](agents/editeur-contenu.md#notion-changer-racine)
 
 ## Entrées (Enhanced Input)
 - **Input Action (IA) et Input Mapping Context (IMC)** — l'intention vs les touches ; Add Mapping Context → [explication](agents/editeur-contenu.md#notion-enhanced-input)

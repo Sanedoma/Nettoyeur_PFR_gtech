@@ -21,6 +21,20 @@ void UInteractionComponent::SetPhysicsHandle(UPhysicsHandleComponent* InPhysicsH
 void UInteractionComponent::BeginPlay()
 {
     Super::BeginPlay();
+
+    // Secours (dette n° 12) : si personne n'a fourni de Physics Handle (composant ajouté
+    // à la main sur un autre acteur), on prend celui de l'acteur propriétaire.
+    if (!PhysicsHandle && GetOwner())
+    {
+        PhysicsHandle = GetOwner()->FindComponentByClass<UPhysicsHandleComponent>();
+    }
+    if (!PhysicsHandle)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("InteractionComponent : aucun Physics Handle sur %s, Pull / Grab / Launch sont desactives."),
+            *GetNameSafe(GetOwner()));
+    }
+
     UpdateFocus();
 }
 
@@ -59,6 +73,7 @@ void UInteractionComponent::UpdateFocus()
     // Sans PlayerController (personnage pas encore possédé) on ne vise rien.
     if (!World || !GetViewPoint(ViewLocation, ViewRotation))
     {
+        CurrentFocusComponent = nullptr;
         SetCurrentFocus(nullptr);
         return;
     }
@@ -90,6 +105,9 @@ void UInteractionComponent::UpdateFocus()
         }
     }
 
+    // Dette n° 8 : on garde aussi le composant précis touché, pour saisir le bon mesh
+    // quand la racine de l'acteur n'est pas l'objet physique.
+    CurrentFocusComponent = bHit ? Hit.GetComponent() : nullptr;
     SetCurrentFocus(bHit ? Hit.GetActor() : nullptr);
 }
 
@@ -111,23 +129,39 @@ AActor* UInteractionComponent::GetCurrentFocus() const
     return CurrentFocus;
 }
 
-bool UInteractionComponent::CanFocusPerform(EInteractionType Interaction) const
+bool UInteractionComponent::ActorAllows(const AActor* Actor, EInteractionType Interaction)
 {
-    if (!CurrentFocus)
+    if (!Actor)
     {
         return false;
     }
 
     const UInteractionProfileComponent* Profile =
-        CurrentFocus->FindComponentByClass<UInteractionProfileComponent>();
+        Actor->FindComponentByClass<UInteractionProfileComponent>();
     return Profile && Profile->CanPerform(Interaction);
+}
+
+bool UInteractionComponent::CanFocusPerform(EInteractionType Interaction) const
+{
+    return ActorAllows(CurrentFocus, Interaction);
 }
 
 UPrimitiveComponent* UInteractionComponent::GetFocusPrimitive() const
 {
-    return CurrentFocus
-        ? Cast<UPrimitiveComponent>(CurrentFocus->GetRootComponent())
-        : nullptr;
+    if (!CurrentFocus)
+    {
+        return nullptr;
+    }
+
+    // 1. Le composant réellement touché, s'il appartient bien à la cible et simule la physique.
+    if (IsValid(CurrentFocusComponent) && CurrentFocusComponent->GetOwner() == CurrentFocus
+        && CurrentFocusComponent->IsSimulatingPhysics())
+    {
+        return CurrentFocusComponent;
+    }
+
+    // 2. Sinon la racine, comme avant T002 (Pull / Grab vérifient ensuite qu'elle simule).
+    return Cast<UPrimitiveComponent>(CurrentFocus->GetRootComponent());
 }
 
 void UInteractionComponent::Pull()
@@ -247,22 +281,37 @@ void UInteractionComponent::UpdateHold(float DeltaTime)
 
     const FVector TraceStart = DesiredLocation + FVector(0.f, 0.f, 500.f);
     const FVector TraceEnd = DesiredLocation - FVector(0.f, 0.f, 1500.f);
-    TArray<FHitResult> GroundHits;
-    World->LineTraceMultiByChannel(
-        GroundHits, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
 
+    // Distance entre le point tenu (l'origine du composant) et le bas de l'objet
+    // (dette n° 11) : juste si l'origine du mesh n'est pas au centre (pivot à la base…).
+    const FBoxSphereBounds& HeldBounds = HeldComponent->Bounds;
+    const double OriginToBottom =
+        HeldComponent->GetComponentLocation().Z - (HeldBounds.Origin.Z - HeldBounds.BoxExtent.Z);
+
+    // Dette n° 9 : un Line Trace s'arrête au premier objet bloquant. Si c'est un objet
+    // physique (une autre caisse), on l'ignore et on relance, jusqu'à trouver le sol
+    // (bloquant et non simulé) ou ne plus rien toucher.
+    constexpr int32 MaxGroundTraces = 8;
     bool bFoundGround = false;
-    for (const FHitResult& GroundHit : GroundHits)
+    for (int32 TraceIndex = 0; TraceIndex < MaxGroundTraces; ++TraceIndex)
     {
-        const UPrimitiveComponent* HitPrimitive = GroundHit.GetComponent();
-        if (GroundHit.bBlockingHit && HitPrimitive &&
-            !HitPrimitive->IsSimulatingPhysics())
+        FHitResult GroundHit;
+        if (!World->LineTraceSingleByChannel(
+            GroundHit, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
         {
-            const float HalfHeight = HeldComponent->Bounds.BoxExtent.Z;
-            DesiredLocation.Z = GroundHit.ImpactPoint.Z + HalfHeight + 2.f;
-            bFoundGround = true;
             break;
         }
+
+        UPrimitiveComponent* HitPrimitive = GroundHit.GetComponent();
+        if (HitPrimitive && HitPrimitive->IsSimulatingPhysics())
+        {
+            QueryParams.AddIgnoredComponent(HitPrimitive);
+            continue;
+        }
+
+        DesiredLocation.Z = GroundHit.ImpactPoint.Z + OriginToBottom + 2.f;
+        bFoundGround = true;
+        break;
     }
 
     // Au bord d'un vide, on lâche l'objet : il tombe avec la gravité au lieu
@@ -273,10 +322,9 @@ void UInteractionComponent::UpdateHold(float DeltaTime)
         return;
     }
 
+    // Un seul lissage pour X, Y et Z (dette n° 10 : Z était lissé une deuxième fois).
     HeldTargetLocation = FMath::VInterpTo(
         HeldTargetLocation, DesiredLocation, DeltaTime, HoldInterpSpeed);
-    HeldTargetLocation.Z = FMath::FInterpTo(
-        HeldTargetLocation.Z, DesiredLocation.Z, DeltaTime, HoldInterpSpeed);
 
     // L'orientation reste celle de la saisie ; seul le déplacement au sol change.
     PhysicsHandle->SetTargetLocationAndRotation(HeldTargetLocation, HeldTargetRotation);
@@ -298,6 +346,46 @@ void UInteractionComponent::ReleaseGrab()
     {
         OnHoldChanged.Broadcast(false);
     }
+}
+
+void UInteractionComponent::Launch()
+{
+    // Rien n'est tenu, ou l'objet est tiré en Pull : on ne fait rien.
+    if (!IsHoldingObject() || !bIsGrabbing)
+    {
+        return;
+    }
+
+    // Le profil lu est celui de l'objet TENU (pas de la cible visée, qui peut différer).
+    UPrimitiveComponent* HeldComponent = PhysicsHandle->GrabbedComponent;
+    if (!HeldComponent || !ActorAllows(HeldComponent->GetOwner(), EInteractionType::Launch))
+    {
+        // Pas de Launch dans le profil : l'objet reste tenu (choix documenté T002).
+        return;
+    }
+
+    FVector ViewLocation;
+    FRotator ViewRotation;
+    GetViewPoint(ViewLocation, ViewRotation);
+    const FVector LaunchDirection = ViewRotation.Vector();
+
+    // Relâcher par le chemin normal : OnHoldChanged(false) part, le prompt réapparaît.
+    ReleaseGrab();
+
+    // Vitesse de départ = impulsion / masse, plafonnée : un objet lourd part moins vite,
+    // un objet très léger ne dépasse jamais MaxLaunchSpeed.
+    const float Mass = HeldComponent->GetMass();
+    const float LaunchSpeed = Mass > KINDA_SMALL_NUMBER
+        ? FMath::Min(LaunchImpulse / Mass, MaxLaunchSpeed)
+        : MaxLaunchSpeed;
+
+    // Détection de collision continue : à grande vitesse, l'objet ne peut pas « sauter »
+    // par-dessus un mur fin entre deux pas de simulation.
+    HeldComponent->SetUseCCD(true);
+
+    // bVelChange = true : la valeur passée est directement un changement de vitesse (cm/s),
+    // la masse a déjà été prise en compte au-dessus.
+    HeldComponent->AddImpulse(LaunchDirection * LaunchSpeed, NAME_None, true);
 }
 
 bool UInteractionComponent::IsHoldingObject() const

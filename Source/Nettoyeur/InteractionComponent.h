@@ -40,6 +40,17 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Tenir", meta = (ClampMin = "0.1"))
     float HoldInterpSpeed = 6.f;
 
+    /**
+     * Impulsion du lancer (kg·cm/s), appliquée dans la direction de la caméra.
+     * Dépend de la masse : vitesse de départ = LaunchImpulse / masse (un objet lourd part moins vite).
+     */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Lancer", meta = (ClampMin = "0.0"))
+    float LaunchImpulse = 15000.f;
+
+    /** Plafond de la vitesse de départ d'un objet lancé (cm/s), quelle que soit sa masse. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Lancer", meta = (ClampMin = "0.0", ClampMax = "5000.0"))
+    float MaxLaunchSpeed = 1500.f;
+
     /** Dessine la visée à chaque image (trait vert = touche, rouge = rien). Faux par défaut. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Debug")
     bool bAfficherDebug = false;
@@ -52,7 +63,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category = "Interaction|Tenir")
     FOnHoldChanged OnHoldChanged;
 
-    /** Le Physics Handle est créé par le personnage propriétaire. */
+    /**
+     * Le Physics Handle est normalement donné par le constructeur du personnage.
+     * Sinon, BeginPlay cherche un Physics Handle sur l'acteur propriétaire.
+     */
     void SetPhysicsHandle(UPhysicsHandleComponent* InPhysicsHandle);
 
     /** Acteur actuellement visé (nullptr si rien). */
@@ -75,6 +89,14 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Interaction|Tenir")
     void ReleaseGrab();
 
+    /**
+     * Lance l'objet tenu en Grab si son profil autorise Launch : le relâche puis le pousse
+     * dans la direction de la caméra. Sans effet (l'objet reste tenu) si rien n'est tenu,
+     * si l'objet est tiré en Pull ou si son profil n'autorise pas Launch.
+     */
+    UFUNCTION(BlueprintCallable, Category = "Interaction|Lancer")
+    void Launch();
+
     UFUNCTION(BlueprintPure, Category = "Interaction|Tenir")
     bool IsHoldingObject() const;
 
@@ -87,9 +109,14 @@ private:
     UPROPERTY()
     TObjectPtr<AActor> CurrentFocus = nullptr;
 
+    /** Composant précis touché par la visée (un acteur peut avoir plusieurs composants). */
+    UPROPERTY()
+    TObjectPtr<UPrimitiveComponent> CurrentFocusComponent = nullptr;
+
     UPROPERTY()
     TObjectPtr<UPhysicsHandleComponent> PhysicsHandle = nullptr;
 
+    /** true = l'objet tenu l'a été par Grab ; false = par Pull, ou rien n'est tenu. */
     bool bIsGrabbing = false;
 
     FVector HeldTargetLocation = FVector::ZeroVector;
@@ -105,5 +132,12 @@ private:
      */
     bool GetViewPoint(FVector& OutLocation, FRotator& OutRotation) const;
 
+    /**
+     * Composant à saisir sur la cible : le composant touché s'il simule la physique,
+     * sinon le composant racine (ancien comportement). nullptr si aucun ne convient.
+     */
     UPrimitiveComponent* GetFocusPrimitive() const;
+
+    /** Vrai si Actor a un profil d'interactions qui autorise Interaction. */
+    static bool ActorAllows(const AActor* Actor, EInteractionType Interaction);
 };

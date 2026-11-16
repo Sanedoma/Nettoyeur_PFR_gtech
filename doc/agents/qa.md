@@ -4,6 +4,80 @@
 
 ---
 
+## QA T002 — Lancer un objet tenu — 2026-11-16
+**Verdict :** ✅ Validé QA pour tout ce qui est vérifiable sans lancer le jeu (compilation, code, assets lus hors éditeur, périmètre, doc). Le graphe de `BP_FirstPersonCharacter` **n'est pas monté** (laissé au développeur, normal) et **aucun test en jeu n'a été fait** (éditeur fermé, pas d'EngineWire) : 5 critères sur 6 restent à valider par le développeur (procédure en bas).
+
+### Compilation
+- Méthode : éditeur fermé, PowerShell, `Build.bat NettoyeurEditor Win64 Development -Project=... -WaitMutex` (commande de `CLAUDE.md` §6).
+- Résultat : **`Result: Succeeded`** en 17,3 s. UHT : 3 fichiers générés (`-WarningsAsErrors` actif, aucune erreur). 8 actions : `PersonnageNettoyeur.cpp`, `InteractionComponent.cpp`, `ComposantNettoyage.cpp`, `WidgetInteraction.cpp`, `Module.Nettoyeur.gen.cpp`, link `.lib` + `.dll`, metadata. **0 erreur, 0 avertissement** (la seule ligne en plus est le message normal de l'éditeur de liens « Création de la bibliothèque … .lib et de l'objet … .exp »).
+
+### Critères d'acceptation
+- [ ] Saisir `BP_ObjetGrab_Test1` puis lancer → part vers l'avant de la caméra et retombe — **non testé en jeu**. Code conforme : direction = `GetViewPoint` (rotation de la caméra du PlayerController) lue **avant** `ReleaseGrab()`, puis `AddImpulse(Direction × Vitesse, NAME_None, bVelChange = true)` sur le composant tenu. Asset : profil [Grab, Launch], Simulate Physics, masse imposée → 15000 / 25 = 600 cm/s attendus.
+- [ ] Objet sans `Launch` → comportement documenté — **non testé en jeu**. Code : `ActorAllows(HeldComponent->GetOwner(), Launch)` faux → `return` avant `ReleaseGrab` ⇒ l'objet **reste tenu** (choix documenté `gameplay-cpp.md` T002 §2.1 point 2 ; à reporter dans `decisions.md` par l'orchestrateur).
+- [ ] Lancer sans objet tenu → rien, aucune erreur — **non testé en jeu**. Code : première ligne `if (!IsHoldingObject() || !bIsGrabbing) return;` ; `IsHoldingObject()` vérifie `PhysicsHandle` avant de le déréférencer ; aucun `UE_LOG` dans `Launch`.
+- [ ] Ne traverse pas les murs à force maximale — **non testé en jeu**. Code : vitesse plafonnée (`MaxLaunchSpeed`, `ClampMax = 5000`) + `SetUseCCD(true)` avant l'impulsion. Instance placée à 1,3 m du muret nord (lu dans le fichier d'acteur, voir Assets).
+- [ ] Grab, Pull, Release, nettoyage inchangés — **non testé en jeu**. Relecture : voir « Non-régression » ; aucun risque bloquant trouvé, deux changements de sensation à surveiller (dette n° 9 et 10).
+- [x] Journal conforme (impulsion, masse, `AddImpulse`, Input Action / Mapping Context) — `gameplay-cpp.md` T002 : notions *Impulsion, masse et AddImpulse*, *CCD*, *static*, *constexpr*, *IsValid*, *Bounds* expliquées avec ancre ; `editeur-contenu.md` T002 : *Changer la racine*, *Masse imposée* ; Input Action / Mapping Context déjà dans `notions.md` (T000) et liés ; les 9 nouvelles lignes de `notions.md` pointent vers des ancres existantes (vérifié par recherche des `id="notion-…"`).
+
+### Non-régression (relecture, sans jeu)
+- **Visée** : même sweep, même portée ; seul ajout `CurrentFocusComponent = bHit ? Hit.GetComponent() : nullptr`, remis à nul aussi dans la branche « pas de PlayerController ». **Aucun nouveau trace de visée** (`Launch` n'en fait aucun). `OnFocusChanged` toujours piloté par l'acteur.
+- **Pull validé en T001** : `GetFocusPrimitive` préfère le composant touché **s'il est `IsValid`, appartient à la cible et simule** ; sinon la racine comme avant. Pour `BP_ObjetPull_Test` (racine = mesh simulé) le composant renvoyé est le même qu'avant.
+- **Recherche du sol (dette n° 9)** : boucle de `LineTraceSingleByChannel` bornée par `constexpr MaxGroundTraces = 8`, `AddIgnoredComponent` sur chaque objet simulé rencontré ; sortie sur « rien touché » (→ lâché, bord de vide, comme avant) ou premier bloquant non simulé (sol). Toujours terminante. Cas courant : 1 trace.
+- **Dette n° 10** : `FInterpTo` de Z supprimé, reste un seul `VInterpTo` ⇒ en montée de plateforme, l'objet tiré monte plus lentement qu'avant : **à vérifier en jeu** (point 8 ci-dessous).
+- **Dette n° 11** : `OriginToBottom = Loc.Z − (Bounds.Origin.Z − Bounds.BoxExtent.Z)` ; pour un pivot centré, égal à l'ancien `BoxExtent.Z`. Pour `BP_ObjetGrab_Test1` (`SM_Cube`, pivot à la base), la valeur est ~0, ce qui est juste.
+- **Dette n° 12** : `FindComponentByClass<UPhysicsHandleComponent>()` au `BeginPlay` seulement si aucun handle fourni ; avertissement sinon. `APersonnageNettoyeur` fournit toujours le sien ⇒ l'avertissement ne doit **pas** apparaître (point 10).
+- **Relâchement** : `Launch` passe par `ReleaseGrab()` ⇒ `ReleaseComponent()`, `bIsGrabbing = false`, `OnHoldChanged(false)` ⇒ le prompt de `UWidgetInteraction` réapparaît comme pour un relâchement normal. Le pointeur local `HeldComponent` est pris avant (`GrabbedComponent` repasse à nul).
+- **Nettoyage** : `ComposantNettoyage.cpp` recompilé (unity/adaptive build) mais **non modifié** par T002 (diff vide).
+
+### Cas limites testés (par relecture du code)
+- Pas de cible / rien tenu → `return` immédiat. Double appui clic droit → le 2ᵉ appel ne tient plus rien → `return`.
+- Objet tiré en Pull → `bIsGrabbing` faux → rien, l'objet reste tiré.
+- Visée qui change pendant la tenue → le profil lu est celui de l'objet **tenu**, pas de la cible visée (`ActorAllows` sur `HeldComponent->GetOwner()`).
+- Masse ≈ 0 → `MaxLaunchSpeed` (pas de division par zéro). `LaunchImpulse = 0` → l'objet est seulement lâché (vitesse 0) ; acceptable.
+- Pas de PlayerController → `GetViewPoint` renvoie la rotation de l'acteur (sorties toujours initialisées) ; impossible en pratique puisqu'un Grab demande déjà la visée.
+- Composant visé détruit entre deux images → `IsValid(CurrentFocusComponent)` faux → retombe sur la racine.
+- Pile de plus de 7 objets physiques sous l'objet tiré → aucun sol trouvé → objet lâché (borne assumée, documentée).
+
+### Relecture code
+- Lisible, commenté en français, identifiants sans accents, UTF-8. `UPROPERTY` avec `Category` et `ClampMin/ClampMax`. Pointeurs vérifiés avant usage. Pas de nouveau `Tick` ni `DrawDebug` (le debug existant reste derrière `bAfficherDebug`). Pas de doublon : `ActorAllows` factorise la lecture du profil, `CanFocusPerform` l'appelle. Respect de `decisions.md` (logique en C++, réglages éditables, visée unique de T001).
+- Remarques (non bloquantes) :
+  1. La CCD reste active sur un objet après son premier lancer (assumé et documenté §7 du journal ; coût négligeable aujourd'hui).
+  2. Les trois choix (masse + plafond, CCD par code, profil sans Launch → reste tenu) sont proposés mais **pas encore inscrits** dans `doc/decisions.md` : à faire par l'orchestrateur.
+- **Périmètre** : fichiers T002 modifiés = `InteractionComponent.h/.cpp`, `IA_Lancer` (nouveau), `IMC_Default`, `BP_ObjetGrab_Test1`, fichier d'acteur `…/3/6N/8BSGYZCK9EMQ2EXLYF0DEW.uasset` (nouveau), journaux, `notions.md`, fiche. `PersonnageNettoyeur.*` et `BP_FirstPersonCharacter` non touchés. Rien dans `Saved/`, `Intermediate/`, `Binaries/` n'est suivi. **Hors T002** (autre piste, ignorés) : `.gitattributes`, `.gitignore`, `CLAUDE.md`, `doc/CONVENTION.md`, `doc/decisions.md`, `.claude/agents/editeur-contenu.md`, `.claude/agents/qa.md`, `.claude/agents/rendu.md`, `.claude/agents/blender-*.md`, `doc/agents/blender-*.md`, `doc/art/`, `doc/taches/A001-A003`, PointLight `…/0/I6/`. À séparer au moment des commits.
+
+### Assets (lus hors éditeur, comparaison des chaînes avec la version HEAD via Git LFS)
+- `IA_Lancer` : nouvel asset `/Game/Input/Actions/IA_Lancer`, aucun `ValueType` explicite ⇒ valeur par défaut *Digital (bool)*. ✔
+- `IMC_Default` : seules différences avec HEAD = `IA_Lancer` et `RightMouseButton` ajoutés ; `LeftMouseButton` (Grab) et toutes les autres touches toujours présentes. ✔ (Le nombre exact de 16 lignes n'est pas lisible ainsi : à confirmer à l'œil, point 1 de la procédure.)
+- `BP_ObjetGrab_Test1` : `GeometryCollection*` et `/Script/GeometryCollectionEngine` disparus ; `StaticMeshComponent` `SM_Cube`, `bSimulatePhysics`, `PhysicsActor`, `bOverrideMass` + `MassInKgOverride`, `RelativeScale3D`, `EInteractionType::Grab` + `EInteractionType::Launch`, `Pull` disparu. ✔ Conforme à `editeur-contenu.md` §4.3.
+- Fichier d'acteur `…/3/6N/…` : instance de `BP_ObjetGrab_Test1` dans `Lvl_FirstPerson`. ✔ Seul `BP_ObjetGrab_Test1` et ce fichier le référencent.
+
+### Relecture documentation
+- Les deux entrées T002 ont les 7 sections du modèle (`CONVENTION.md` §5), les sections vides écrites « Aucune ». Étapes éditeur écrites en clics (actions MCP retraduites, `editeur-contenu.md` §4.1 à 4.4), graphe décrit nœud par nœud (§4.5). Le *pourquoi* est expliqué pour chaque choix (masse, plafond, CCD, racine, 25 kg, emplacement). Les morceaux de code non triviaux (`KINDA_SMALL_NUMBER`, `AddIgnoredComponent`, `GetNameSafe`, formule de `OriginToBottom`) sont expliqués sur place.
+- `CONVENTION.md` : la copie de travail (modifiée par la piste art) n'ajoute que des règles Blender et renomme la section 4 en « Étapes dans l'éditeur (Unreal et/ou Blender) » ; rien qui change l'évaluation de T002, qui est conforme aux deux versions.
+- À mettre à jour après les tests : §5 des deux journaux disent « compilation non faite » (c'est maintenant fait, voir ci-dessus) ; le statut de la fiche.
+
+### Procédure de validation pour le développeur
+1. **Rouvrir l'éditeur** (le C++ vient d'être compilé : la DLL contient `Launch`). Vérifier dans l'**Output Log** (Fenêtre → Output Log) qu'il n'y a **aucune** ligne « InteractionComponent : aucun Physics Handle… » une fois en jeu (point 10 de la fiche).
+2. Ouvrir `Content/Input/IMC_Default` : **16** lignes de *Mappings*, la dernière = `IA_Lancer` ← *Right Mouse Button* ; fermer sans enregistrer.
+3. Ouvrir `Content/FirstPerson/Blueprints/BP_FirstPersonCharacter` → **Event Graph**, et monter le graphe de `editeur-contenu.md` T002 §4.5 :
+   - a) clic droit → **EnhancedInputAction IA_Lancer** ; glisser **InteractionComponent** depuis le panneau Composants → **Get** ; depuis sa broche bleue, tirer un fil → **Launch**. Relier **Started** → exec de *Launch*, **Interaction Component** → **Target**.
+   - b) bloc Grab existant (`Ctrl+F` « IA_Grab ») : **Completed** → exec d'entrée de **Release Grab** ; **Canceled** → la même broche ; vérifier que **Target** de *Release Grab* est relié à *Interaction Component*.
+   - c) **Compile** (vert) puis **Save**. Faire une capture des deux blocs pour le dossier.
+4. **Play** dans `Lvl_FirstPerson`. Descendre la rampe nord jusqu'à la caisse grise de 40 cm devant le muret.
+5. Viser la caisse : prompt **« Clic gauche : Saisir »** (une seule ligne). *Attendu : oui.*
+6. Tenir le clic gauche : la caisse est saisie et suit la caméra, le prompt **disparaît**. Relâcher le clic gauche : elle tombe, le prompt revient.
+7. Saisir de nouveau, viser vers le haut au loin, **clic droit** : la caisse part dans la direction de la caméra (~6 m/s), retombe ; le prompt revient. Recommencer en visant à gauche, à droite, vers le bas.
+8. Saisir, se placer face au muret à environ 1 m, **clic droit** : la caisse rebondit, **ne traverse pas**. Recommencer avec *InteractionComponent* (dans `BP_FirstPersonCharacter`) → *Interaction | Lancer* → `Max Launch Speed` = **5000** et `Launch Impulse` = **200000** (pour atteindre le plafond avec 25 kg), sans enregistrer : toujours pas de traversée. Remettre les valeurs (15000 / 1500) ou fermer sans enregistrer.
+9. Sans rien tenir, **clic droit** plusieurs fois : rien ne se passe, aucune ligne rouge ou jaune dans l'Output Log.
+10. Tirer `BP_ObjetPull_Test` (**R** maintenu) puis **clic droit** : rien, l'objet reste tiré. Continuer : il glisse au sol, est lâché au bord d'un vide, et monte sur une plateforme sans accrocher (dette n° 10 : il peut monter un peu plus lentement qu'avant).
+11. Dette n° 9 : en tirant `BP_ObjetPull_Test`, le faire passer contre / au-dessus de la caisse `BP_ObjetGrab_Test1` : il **n'est plus lâché**, il la pousse.
+12. Objet sans Launch : dans l'Organiseur, sélectionner l'instance `BP_ObjetGrab_Test1` → *InteractionProfile* → retirer *Lancer* (sans enregistrer), Play, saisir puis clic droit : la caisse **reste tenue**. Remettre / ne pas enregistrer.
+13. Objet lourd (facultatif) : sur l'instance, *Mass (kg)* = 50 (sans enregistrer) → le lancer part nettement moins loin (300 cm/s).
+14. Nettoyage : viser une `BP_PreuveNettoyable`, **E** ×4 → elle disparaît. Saut (Espace) impossible pendant qu'on tient un objet.
+15. Si tout est conforme : cocher les critères restants de la fiche et donner ta validation à l'orchestrateur.
+
+---
+
 ## QA T001 (extension) — Prompt par interaction — 2026-11-16
 **Verdict :** ✅ Validé QA pour tout ce qui est vérifiable sans lancer le jeu (compilation, code, périmètre, doc). Le reparentage de `WBP_Interaction` et les tests en jeu **n'ont pas été faits** (éditeur fermé, pas de MCP) : ils restent au développeur (procédure en bas).
 

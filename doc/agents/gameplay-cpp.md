@@ -4,6 +4,221 @@
 
 ---
 
+## T002 — Lancer un objet tenu (code) — 2026-11-16
+
+**Objectif :** pouvoir lancer un objet saisi avec Grab, vers l'avant de la caméra, avec une force limitée et prévisible ; rendre Grab / Pull réellement testables (dette n° 8, 9) et solder la dette triviale du même fichier (n° 10, 11, 12).
+**Étape du GDD :** §11 étape 3 (« Ajouter le lancer avec une impulsion limitée »), §6.2 (« Lancer : impulsion limitée et prévisible »).
+**Branche :** `tache/T002-lancer-objet`
+
+### 1. Fichiers créés / modifiés
+- `Source/Nettoyeur/InteractionComponent.h` — modifié :
+  - 2 réglages nouveaux, catégorie *Interaction | Lancer* : `LaunchImpulse` (15000, min 0) et `MaxLaunchSpeed` (1500 cm/s, 0 à 5000) ;
+  - nouvelle `UFUNCTION(BlueprintCallable) void Launch()` ;
+  - nouveau membre privé `CurrentFocusComponent` (composant précis visé, dette n° 8) ;
+  - nouvelle fonction privée `static bool ActorAllows(const AActor*, EInteractionType)` ;
+  - commentaires de `SetPhysicsHandle`, `bIsGrabbing`, `GetFocusPrimitive` mis à jour.
+- `Source/Nettoyeur/InteractionComponent.cpp` — modifié : `Launch()` ; secours du Physics Handle au `BeginPlay` (n° 12) ; `UpdateFocus` mémorise le composant touché et `GetFocusPrimitive` le préfère à la racine (n° 8) ; recherche du sol de Pull qui traverse les objets physiques (n° 9), un seul lissage (n° 10), hauteur de pose calculée depuis l'origine du composant (n° 11) ; `CanFocusPerform` passe par `ActorAllows` (même résultat).
+- `PersonnageNettoyeur.h/.cpp` — **non modifiés** : la dette n° 12 se règle entièrement dans le composant (§2.6).
+- `doc/agents/gameplay-cpp.md` (cette entrée), `doc/notions.md` (6 notions ajoutées), `doc/taches/T002-lancer-objet.md` (statut).
+
+### 2. Implémentation du code
+
+#### 2.1 `Launch()` — déroulé
+```cpp
+void UInteractionComponent::Launch()
+{
+    if (!IsHoldingObject() || !bIsGrabbing) return;              // rien tenu, ou Pull
+    UPrimitiveComponent* HeldComponent = PhysicsHandle->GrabbedComponent;
+    if (!HeldComponent || !ActorAllows(HeldComponent->GetOwner(), EInteractionType::Launch))
+        return;                                                   // pas de Launch : reste tenu
+    GetViewPoint(ViewLocation, ViewRotation);
+    const FVector LaunchDirection = ViewRotation.Vector();
+    ReleaseGrab();                                                // OnHoldChanged(false)
+    const float Mass = HeldComponent->GetMass();
+    const float LaunchSpeed = Mass > KINDA_SMALL_NUMBER
+        ? FMath::Min(LaunchImpulse / Mass, MaxLaunchSpeed) : MaxLaunchSpeed;
+    HeldComponent->SetUseCCD(true);
+    HeldComponent->AddImpulse(LaunchDirection * LaunchSpeed, NAME_None, true);
+}
+```
+Points importants, dans l'ordre :
+1. **Trois cas sans effet**, qui sortent tout de suite sans message ni erreur : rien n'est tenu (`IsHoldingObject()` faux — ça couvre aussi l'absence de Physics Handle) ; l'objet est tenu en **Pull** (`bIsGrabbing` faux) ; le profil de l'objet n'a pas *Lancer*. Le booléen `bIsGrabbing` existait déjà et distingue exactement Grab et Pull : **aucun nouveau booléen**, donc `IsHoldingObject()` et `OnHoldChanged` restent la seule vérité sur « je tiens quelque chose » (le prompt `UWidgetInteraction` en dépend).
+2. **Profil sans *Lancer* → l'objet reste tenu** (choix). L'autre option de la fiche était « seulement relâché ». J'ai pris « rien » : une touche « Lancer » qui *lâche* parfois l'objet, alors que le prompt est masqué pendant la tenue (le joueur ne voit pas ce que l'objet accepte), serait une surprise ; relâcher reste le rôle de `ReleaseGrab` (relâcher le clic gauche).
+3. **On lit le profil de l'objet tenu**, pas celui de la cible visée (`CanFocusPerform`). Pendant un Grab la visée regarde en général l'objet tenu, mais pas toujours (un autre objet peut passer devant le rayon). C'est pour ce cas que `ActorAllows` (§2.2) existe. Comme demandé par la fiche, **aucune nouvelle trace** : la direction vient de `GetViewPoint` (déjà utilisé par la visée et Grab).
+4. **La direction est lue avant de relâcher**, puis on relâche par le **chemin normal** `ReleaseGrab()` : il appelle `PhysicsHandle->ReleaseComponent()`, remet `bIsGrabbing` à faux et diffuse `OnHoldChanged(false)` ⇒ le prompt réapparaît exactement comme après un simple relâchement. On garde un pointeur local `HeldComponent` parce que `ReleaseComponent()` remet `GrabbedComponent` à `nullptr`.
+5. **Vitesse de départ** = impulsion ÷ masse, plafonnée (§2.3), puis **CCD** (§2.4), puis `AddImpulse` (notion ci-dessous).
+6. La vitesse que l'objet avait déjà en suivant la caméra **s'ajoute** à celle du lancer (c'est ce que fait une impulsion : elle *ajoute* une vitesse). En pratique elle est faible (l'objet est presque immobile devant la caméra) ; si tu lances en te retournant vite, le lancer part un peu « de côté », comme dans la réalité.
+
+<a id="notion-impulsion-addimpulse"></a>
+> **Notion nouvelle — Impulsion, masse et `AddImpulse`**
+> Pour mettre en mouvement un objet **simulé**, on ne change pas sa position : on lui donne de la vitesse. Deux façons : une **force** (`AddForce`), qui agit un peu à chaque image tant qu'on l'applique (un moteur, le vent), et une **impulsion** (`AddImpulse`), un « coup » instantané, appliqué une seule fois (un lancer, un choc). Physiquement, impulsion = masse × changement de vitesse ; donc **à impulsion égale, un objet deux fois plus lourd part deux fois moins vite**. Unités Unreal : masse en kg, vitesse en cm/s, impulsion en kg·cm/s.
+> `Composant->AddImpulse(Vecteur, NomOs, bVelChange)` :
+> - `Vecteur` : direction × intensité ;
+> - `NomOs` : `NAME_None` pour un mesh simple (un nom d'os pour un squelette, ex. un ragdoll) ;
+> - `bVelChange` : **faux** (défaut) = `Vecteur` est une vraie impulsion, la masse est prise en compte par le moteur ; **vrai** = `Vecteur` est directement le **changement de vitesse** voulu, la masse est ignorée.
+> L'objet doit simuler la physique, sinon rien ne se passe. `GetMass()` renvoie la masse calculée du corps (kg ; 0 s'il n'y a pas de corps physique). Équivalent Blueprint : nœud *Add Impulse* (case *Vel Change*). (Ajoutée à `doc/notions.md`.)
+> Doc : [UPrimitiveComponent::AddImpulse (API)](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Components/UPrimitiveComponent/AddImpulse).
+
+#### 2.2 `ActorAllows` — une seule façon de lire un profil
+`CanFocusPerform` contenait la lecture du profil (« l'acteur a-t-il un `UInteractionProfileComponent` qui autorise X ? ») appliquée à la cible visée. `Launch` a besoin de la **même** question sur un autre acteur. Plutôt que recopier ces lignes, je les ai sorties dans une fonction privée `static bool ActorAllows(const AActor* Actor, EInteractionType Interaction)` ; `CanFocusPerform` devient `return ActorAllows(CurrentFocus, Interaction);` — résultat identique (faux si pas d'acteur ou pas de profil). Elle n'est pas une `UFUNCTION` : aucun Blueprint n'en a besoin aujourd'hui.
+
+<a id="notion-static-membre"></a>
+> **Notion nouvelle — Fonction membre `static`**
+> Une fonction déclarée `static` dans une classe **n'a pas d'objet `this`** : elle ne lit aucune variable membre, elle ne travaille que sur ses paramètres. On l'appelle comme une fonction ordinaire depuis la classe (`ActorAllows(Acteur, Type)`) ou de l'extérieur avec le nom de la classe (`UInteractionComponent::ActorAllows(...)`, si elle était publique). Intérêt : la signature dit d'elle-même « je ne dépends pas de l'état du composant », et le mot `static` n'apparaît que dans le `.h` (pas dans la définition du `.cpp`). En Unreal on en croise beaucoup : `UGameplayStatics::GetPlayerController(...)`, `FMath::Min(...)`. (Ajoutée à `doc/notions.md`.)
+
+#### 2.3 Impulsion dépendante de la masse, avec plafond — pourquoi
+La fiche demande une « force réglable (`LaunchImpulse`), indépendante ou non de la masse, et plafonnée ». J'ai choisi **dépendante de la masse + plafond de vitesse** :
+```cpp
+const float LaunchSpeed = Mass > KINDA_SMALL_NUMBER
+    ? FMath::Min(LaunchImpulse / Mass, MaxLaunchSpeed)
+    : MaxLaunchSpeed;
+HeldComponent->AddImpulse(LaunchDirection * LaunchSpeed, NAME_None, /*bVelChange*/ true);
+```
+- **Dépendante de la masse** (vitesse = `LaunchImpulse / masse`) : un seau part loin, une caisse lourde tombe presque devant toi. C'est ce que le joueur attend intuitivement et c'est ce qui rend le lancer « prévisible » (GDD §6.2) : *plus c'est lourd, moins ça va loin*, sans surprise. En mode « indépendant de la masse », un frigo partirait aussi vite qu'une tasse.
+- **Plafond `MaxLaunchSpeed`** : sans lui, un objet très léger (0,5 kg) partirait à 30 000 cm/s (300 m/s, une balle de fusil). Le plafond garantit qu'**aucun** objet ne dépasse 1500 cm/s (15 m/s, un bon lancer à la main), et c'est aussi la première protection contre le passage à travers les murs (§2.4). Avec les valeurs par défaut, tout objet de moins de 10 kg (15000 ÷ 1500) part au plafond ; au-delà, la vitesse diminue avec la masse (20 kg → 750 cm/s, 50 kg → 300 cm/s).
+- **Pourquoi calculer la vitesse moi-même et passer `bVelChange = true`** : pour pouvoir **plafonner la vitesse**, il faut la connaître ; on divise donc par la masse soi-même, on plafonne, puis on donne au moteur un changement de vitesse « tout fait ». Passer `LaunchImpulse` avec `bVelChange = false` aurait le même effet sans plafond possible.
+- **Masse nulle** (`GetMass()` ≈ 0, corps sans physique — ne devrait pas arriver puisqu'on vient de le tenir avec le Physics Handle) : on prend `MaxLaunchSpeed` plutôt que de diviser par zéro. `KINDA_SMALL_NUMBER` est une constante du moteur (0,0001) qui sert de « presque zéro » pour comparer des nombres à virgule.
+- `LaunchImpulse` et `MaxLaunchSpeed` sont `EditAnywhere` : réglables sur le composant **InteractionComponent** de `BP_FirstPersonCharacter`, sans recompiler (§4).
+
+#### 2.4 Ne pas traverser les murs : CCD activée au lancer
+Le moteur physique avance par **pas** (environ une fois par image). Entre deux pas, un objet rapide se « téléporte » : à 1500 cm/s et 60 images/s, il saute 25 cm d'un coup. Si le mur fait moins que ces 25 cm (plus l'épaisseur de l'objet), l'objet peut se retrouver **de l'autre côté** sans qu'aucune collision n'ait été vue : c'est l'**effet tunnel**.
+
+Deux protections possibles : (a) le **plafond de vitesse** seul (il réduit le saut par pas mais ne le supprime pas : petit objet + mur fin + image lente = tunnel possible) ; (b) la **CCD**. J'ai gardé le plafond (demandé par la fiche, utile pour le gameplay) **et** ajouté la CCD, parce qu'elle tient en **une ligne** (`HeldComponent->SetUseCCD(true);`), qu'elle **garantit** le critère « ne traverse pas les murs à force maximale » quelle que soit l'épaisseur du mur, et qu'elle ne dépend d'aucun réglage d'asset (rien à cocher sur chaque objet lançable, donc rien à oublier). La CCD n'est activée que sur un objet **effectivement lancé** et le reste ensuite (pas de minuterie pour la couper : code plus simple) ; son coût est négligeable pour quelques objets.
+
+<a id="notion-ccd"></a>
+> **Notion nouvelle — CCD (Continuous Collision Detection, détection de collision continue)**
+> Par défaut, la physique vérifie les collisions **à la position** de chaque objet à chaque pas de simulation (détection *discrète*). Un objet rapide et fin peut ainsi passer d'un côté à l'autre d'un mur entre deux pas sans jamais être « dans » le mur : il le traverse (*tunneling*). Avec la **CCD**, le moteur vérifie aussi le **trajet** entre l'ancienne et la nouvelle position, et arrête l'objet au premier contact. Elle coûte un peu plus de calcul, d'où le fait qu'elle soit désactivée par défaut et réservée aux objets rapides (projectiles, objets lancés).
+> Deux façons de l'activer : en C++ `Composant->SetUseCCD(true)` ; dans l'éditeur, sur le composant (mesh) → **Détails (Details)** → **Physique (Physics)** → déplier les options avancées (petite flèche) → **Utiliser CCD (Use CCD)**. (Ajoutée à `doc/notions.md`.)
+> Doc : [Physics Bodies Reference — Use CCD](https://dev.epicgames.com/documentation/en-us/unreal-engine/physics-bodies-reference-for-unreal-engine).
+
+Cas particulier : si tu tiens l'objet **collé à un mur** (tu es à moins de 150 cm du mur), le Physics Handle l'a déjà arrêté contre le mur ; le lancer le pousse contre le mur, il rebondit et tombe. C'est le test du critère « mur proche ».
+
+#### 2.5 Dette n° 8 — saisir le composant touché, pas la racine
+Avant, `GetFocusPrimitive()` renvoyait **toujours le composant racine** de l'acteur visé. Pour un Blueprint dont la racine n'est pas le mesh physique (`BP_ObjetGrab_Test1` : racine *Geometry Collection* vide, mesh en enfant), Pull et Grab sortaient sans rien faire, même avec le bon profil.
+
+Maintenant :
+- `UpdateFocus` garde aussi le composant touché par le sweep : `CurrentFocusComponent = bHit ? Hit.GetComponent() : nullptr;` (rangé **avant** `SetCurrentFocus`, pour que les abonnés de `OnFocusChanged` voient un état cohérent). C'est un `UPROPERTY()` `TObjectPtr` (voir [TObjectPtr](#notion-tobjectptr)) : si le composant est détruit, le ramasse-miettes le sait.
+- `GetFocusPrimitive()` choisit, dans l'ordre :
+  1. le **composant touché**, s'il est encore valide, s'il **appartient bien** à l'acteur visé et s'il **simule la physique** ;
+  2. sinon **la racine**, exactement comme avant (Pull / Grab vérifient ensuite qu'elle simule).
+- Pour `BP_ObjetPull_Test` (racine = le mesh simulé), on obtient **le même composant** qu'avant : le Pull validé n'est pas changé.
+- On ne compare pas le composant à chaque image dans `SetCurrentFocus` : `OnFocusChanged` ne part toujours que quand **l'acteur** visé change (le prompt raisonne par acteur, via le profil).
+
+<a id="notion-isvalid"></a>
+> **Notion nouvelle — `IsValid(Objet)`**
+> `IsValid(Pointeur)` vaut vrai si le pointeur n'est **pas nul** **et** que l'objet n'est **pas en cours de destruction** (un acteur détruit par `Destroy()` existe encore en mémoire quelques instants, « marqué pour destruction », avant que le ramasse-miettes ne le supprime). Un simple `if (Pointeur)` ne voit que le premier cas. On l'utilise pour un pointeur gardé d'une image à l'autre (ici `CurrentFocusComponent`). Équivalent Blueprint : le nœud *Is Valid* (ou la macro *? Is Valid*). (Ajoutée à `doc/notions.md`.)
+
+Note : la vérification « appartient bien à l'acteur visé » (`GetOwner() == CurrentFocus`) est une ceinture de sécurité : le sweep donne toujours un composant de l'acteur touché, mais cela évite qu'un futur appel désynchronisé saisisse l'objet d'un autre acteur.
+
+#### 2.6 Dette n° 12 — Physics Handle de secours
+Le constructeur de `APersonnageNettoyeur` continue de fournir le handle (`SetPhysicsHandle`), **rien ne change** pour `BP_FirstPersonCharacter`. En plus, au `BeginPlay` du composant :
+```cpp
+if (!PhysicsHandle && GetOwner())
+    PhysicsHandle = GetOwner()->FindComponentByClass<UPhysicsHandleComponent>();
+if (!PhysicsHandle)
+    UE_LOG(LogTemp, Warning, TEXT("InteractionComponent : aucun Physics Handle sur %s, ..."), *GetNameSafe(GetOwner()));
+```
+Si le composant est un jour ajouté à la main (**+ Ajouter**) sur un autre acteur qui a un Physics Handle, il le trouve seul ; sinon un avertissement explique pourquoi Pull / Grab / Launch ne font rien, au lieu d'un silence. `GetNameSafe(Objet)` renvoie le nom de l'objet, ou « None » s'il est nul (pas de plantage). Le message est sans accents (« desactives ») pour éviter tout souci d'affichage dans le journal. Je n'ai **pas** touché au personnage : la fiche ne l'autorisait que si nécessaire, et ça ne l'est pas.
+
+#### 2.7 Dette n° 9 — la recherche du sol de Pull traverse les objets physiques
+Avant : un `LineTraceMultiByChannel`, puis une boucle qui cherchait le premier impact bloquant **non simulé**. Mais un Multi s'arrête au **premier bloquant** (voir [Line Trace vs Sweep](#notion-line-trace-sweep)) : si c'était une autre caisse physique, la liste s'arrêtait là, aucun sol n'était trouvé, et l'objet tiré était **lâché** comme au bord d'un vide.
+
+Maintenant, une boucle de traces **simples**, chacune ignorant les objets physiques déjà rencontrés :
+```cpp
+constexpr int32 MaxGroundTraces = 8;
+for (int32 TraceIndex = 0; TraceIndex < MaxGroundTraces; ++TraceIndex)
+{
+    FHitResult GroundHit;
+    if (!World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_Visibility, QueryParams))
+        break;                                         // plus rien dessous : vide
+    UPrimitiveComponent* HitPrimitive = GroundHit.GetComponent();
+    if (HitPrimitive && HitPrimitive->IsSimulatingPhysics())
+    {
+        QueryParams.AddIgnoredComponent(HitPrimitive); // objet physique : on l'ignore et on recommence
+        continue;
+    }
+    DesiredLocation.Z = GroundHit.ImpactPoint.Z + OriginToBottom + 2.f;  // sol trouvé
+    bFoundGround = true;
+    break;
+}
+```
+- `AddIgnoredComponent` : comme `AddIgnoredActor`, mais pour **un seul composant**.
+- **8 traces au maximum** par image : une pile de 7 objets physiques sous la position voulue est déjà irréaliste ; la limite garantit que la boucle se termine toujours. Dans le cas courant (sol directement dessous), il n'y a **qu'une** trace, comme avant (un Single coûte même un peu moins qu'un Multi).
+- Règle inchangée : le « sol » est le premier objet **bloquant et non simulé** ; pas de sol → `ReleaseGrab()` (bord d'un vide).
+- Conséquence voulue : tirer un objet contre / par-dessus une autre caisse ne le lâche plus ; il vise le sol *sous* la caisse et la pousse (c'est la physique qui gère le contact).
+
+<a id="notion-constexpr"></a>
+> **Notion nouvelle — `constexpr`**
+> `constexpr int32 MaxGroundTraces = 8;` déclare une **constante connue à la compilation** : sa valeur ne peut pas changer et le compilateur la remplace directement dans le code. Comparé à un « nombre magique » écrit dans la boucle (`TraceIndex < 8`), le nom explique ce que représente la valeur. Si on voulait la régler dans l'éditeur, ce serait une `UPROPERTY` ; ici c'est un garde-fou interne, pas un réglage de jeu. (Ajoutée à `doc/notions.md`.)
+
+#### 2.8 Dette n° 10 — un seul lissage en Pull
+Avant, après `VInterpTo` sur le vecteur (X, Y **et** Z), un `FInterpTo` relissait Z une deuxième fois : la hauteur rattrapait environ deux fois plus vite que le déplacement au sol, sans que ce soit voulu ni documenté. J'ai retiré la ligne `FInterpTo` : X, Y, Z suivent maintenant la même vitesse `HoldInterpSpeed`. **Effet visible possible** (à vérifier par `qa`) : en montant sur une plateforme, l'objet tiré monte un peu moins vite qu'avant. Si cela le fait accrocher le bord d'une marche, la correction propre est d'augmenter `HoldInterpSpeed` (réglable), pas de remettre un double lissage.
+
+#### 2.9 Dette n° 11 — hauteur de pose calculée depuis l'origine du composant
+Avant : hauteur voulue = sol + `Bounds.BoxExtent.Z` (demi-hauteur de la boîte englobante) + 2. Cela suppose que l'**origine** du composant (le point que le Physics Handle tient) est **au centre** de l'objet. Pour un mesh dont le pivot est à la base (fréquent pour les meubles), l'objet flottait d'une demi-hauteur.
+
+Maintenant :
+```cpp
+const FBoxSphereBounds& HeldBounds = HeldComponent->Bounds;
+const double OriginToBottom =
+    HeldComponent->GetComponentLocation().Z - (HeldBounds.Origin.Z - HeldBounds.BoxExtent.Z);
+```
+`HeldBounds.Origin.Z - HeldBounds.BoxExtent.Z` = le **bas** de la boîte ; on mesure la distance entre l'origine du composant et ce bas, et on la remet au-dessus du sol. Pour un objet au pivot centré (cas de `BP_ObjetPull_Test`), `Origin.Z` = position du composant, donc `OriginToBottom` = `BoxExtent.Z` : **exactement l'ancien calcul**. `double` parce que les positions d'Unreal 5 sont en double précision (`FVector` = 3 `double`) : pas de conversion inutile.
+
+<a id="notion-bounds"></a>
+> **Notion nouvelle — `Bounds` (`FBoxSphereBounds`) : la boîte englobante d'un composant**
+> Chaque composant visible a un `Bounds` : la plus petite boîte **alignée sur les axes du monde** (et une sphère) qui contient l'objet, recalculée quand il bouge. `Bounds.Origin` = le **centre** de cette boîte (en coordonnées monde), `Bounds.BoxExtent` = la **demi-taille** sur X, Y, Z. Donc le bas de l'objet est à `Origin.Z - BoxExtent.Z` et le haut à `Origin.Z + BoxExtent.Z`. Attention : le centre de la boîte n'est pas forcément la position du composant (le pivot) ; et pour un objet tourné, la boîte « alignée monde » est un peu plus grande que l'objet. Dans l'éditeur, **Afficher (Show) → Avancé (Advanced) → Limites (Bounds)** dans la fenêtre 3D dessine ces boîtes. (Ajoutée à `doc/notions.md`.)
+
+Ce qui reste (non traité, assumé) : pour un objet **tourné** (posé en biais), la boîte alignée monde est plus grande que l'objet, il peut flotter de quelques centimètres. En Pull, l'orientation de la saisie est conservée, donc l'écart est constant et faible ; corriger cela demanderait de calculer le point le plus bas de la forme de collision réelle, hors de proportion avec le besoin actuel.
+
+#### 2.10 Ce qui ne change pas
+- `Pull()`, `Grab()`, `ReleaseGrab()`, `IsHoldingObject()`, `OnHoldChanged`, `OnFocusChanged`, la visée (`UpdateFocus` : même sweep, même portée) : comportement identique, sauf le choix du composant saisi (§2.5, identique pour les objets actuels).
+- `ReleaseGrab` reste le seul endroit qui relâche ; `Launch` passe par lui.
+- Le saut reste interdit pendant la tenue (le personnage lit `IsHoldingObject()`).
+
+### 3. Configuration
+Aucune (`Nettoyeur.Build.cs` non modifié : `AddImpulse`, `SetUseCCD`, `GetMass` sont dans le module `Engine`, déjà en dépendance).
+
+### 4. Étapes dans l'éditeur
+**À faire par `editeur-contenu`** (je n'ai touché à aucun asset) :
+
+a) **Input** — créer `Content/Input/Actions/IA_Lancer` (*Input Action*, type de valeur **Digital (bool)**), l'ajouter à `IMC_Default` sur une touche libre. Touches déjà prises : ZQSD, flèches, Espace, E, R, clic gauche. Suggestion : **clic droit** (geste « lancer » pendant que le clic gauche tient) ou **F**. Déclencheur par défaut (appui).
+
+b) **Graphe de `BP_FirstPersonCharacter`** (à décrire nœud par nœud pour le développeur) :
+- *EnhancedInputAction IA_Lancer* → sortie **Started** → nœud **Launch** (cible : *Interaction Component*, la variable héritée du C++, catégorie *Interaction | Lancer*). C'est la fonction `UInteractionComponent::Launch`, affichée « Launch » dans le menu des nœuds.
+- Rien d'autre : `Launch` vérifie seul qu'un objet est tenu en Grab avec *Lancer* ; appuyer sans rien tenir ne fait rien.
+- (B2, hérité de T000) brancher **Completed** (et **Canceled**) de *IA_Grab* sur **Release Grab** (même cible), pour que relâcher le clic gauche lâche l'objet.
+- Attention à l'ordre si le lancer est sur le **clic droit** et que l'on relâche le clic gauche ensuite : `ReleaseGrab` sans objet tenu ne fait rien (déjà prévu). Si au contraire la touche choisie déclenchait aussi Release Grab, le lancer ne partirait pas : garder `IA_Lancer` séparé de `IA_Grab`.
+
+c) **`BP_ObjetGrab_Test1`** — pour qu'il soit saisissable et lançable :
+- un composant **Static Mesh** avec un mesh visible et une collision simple (ex. `SM_Cube` du template ou une caisse, échelle ~0,3 à 0,5), de préférence **comme composant racine** (remplacer la *Geometry Collection* vide, ou la supprimer). Grâce à la dette n° 8, un mesh **enfant** fonctionne aussi, mais un mesh racine évite un piège : un composant enfant qui simule la physique se **détache** de son acteur, l'acteur (et sa position dans l'Organiseur) reste alors sur place pendant que le mesh tombe ;
+- sur ce mesh, **Détails → Physique (Physics) → Simuler la physique (Simulate Physics)** coché ;
+- **Collision → Préréglages de collision (Collision Presets)** = **PhysicsActor** (bloque *Visibility*, donc visable ; voir [Simulate Physics et Collision Presets](editeur-contenu.md#notion-collision-physique)) ;
+- masse : laisser la masse calculée ou cocher *Mass (kg)* override ; avec les valeurs par défaut, sous 10 kg l'objet part à 1500 cm/s ;
+- composant `ProfilInteractions` (`InteractionProfileComponent`) → **Allowed Interactions** = **[Saisir, Lancer]** (*Grab*, *Launch* ; retirer *Tirer*) ;
+- *Use CCD* : **inutile de le cocher**, `Launch()` l'active au lancer ;
+- placer une instance dans `Lvl_FirstPerson` près d'un mur, pour le test « mur proche ».
+
+d) **Réglages du lancer** (facultatif) : `BP_FirstPersonCharacter` → panneau **Composants** → **InteractionComponent** → **Détails** → catégorie **Interaction | Lancer** → `Launch Impulse` (15000) et `Max Launch Speed` (1500, max 5000).
+
+### 5. Compilation et tests
+- **Compilation : faite par `qa` le 2026-11-16** (éditeur fermé par le développeur, Build.bat depuis PowerShell) : `Result: Succeeded`, 0 erreur, 0 avertissement. Pendant ma tâche l'éditeur était ouvert ; je n'ai fermé ni tué aucun processus.
+- Vérifications faites sans compiler : signatures lues dans `Engine/Source/Runtime/Engine/Classes/Components/PrimitiveComponent.h` (5.7) : `virtual void AddImpulse(FVector Impulse, FName BoneName = NAME_None, bool bVelChange = false)`, `virtual float GetMass() const`, `virtual void SetUseCCD(bool InUseCCD, FName BoneName = NAME_None)` ; fichiers en UTF-8 sans BOM, fins de ligne CRLF (vérifié : 0 ligne en LF seul).
+- **Tests en jeu : non réalisés** (dépendent de la compilation et des assets de `editeur-contenu`). Procédure pour `qa` dans la fiche.
+
+### 6. Git
+- Branche `tache/T002-lancer-objet`. **Aucun commit** de ma part (consigne de l'orchestrateur). Message proposé : `T002: ajouter Launch() et corriger la saisie du composant touché et la recherche du sol (dette 8 à 12)`.
+
+### 7. Résultat et points ouverts
+- Code écrit, **non compilé**, **non testé**.
+- Dette : n° 8, 9, 10, 12 **soldées** ; n° 11 **soldée pour le pivot décentré**, reste l'écart de quelques cm d'un objet tourné (assumé, §2.9).
+- Choix à valider par l'orchestrateur (proposition pour `decisions.md`) : lancer **dépendant de la masse** avec **plafond de vitesse** ; CCD activée par le code au lancer ; profil sans *Lancer* → l'objet **reste tenu**.
+- ⚠️ Dette n° 10 corrigée = léger changement de sensation du Pull en montée (§2.8) : à vérifier en jeu.
+- ⚠️ La CCD reste active sur un objet après son premier lancer (coût négligeable ; à revoir seulement si des dizaines d'objets lançables apparaissent).
+- Le prompt étant masqué pendant la tenue, rien n'indique au joueur qu'un objet est lançable : hors fiche, à prévoir si besoin (le widget a déjà une table `TextesInteractions` où une entrée *Lancer* pourrait être ajoutée, mais il ne s'affiche pas pendant la tenue).
+
+---
+
 ## T001 (extension) — Prompt par interaction — 2026-11-16
 
 **Objectif :** le prompt affiche le message qui correspond à **chaque** interaction que l'objet visé autorise (« E : Nettoyer », « R (maintenir) : Tirer », « Clic gauche : Saisir »…), au lieu du seul texte figé « Appuie sur E pour nettoyer ». La barre de nettoyage n'apparaît que sur un objet essuyable. Le prompt se cache pendant qu'on tient un objet.

@@ -4,6 +4,153 @@
 
 ---
 
+## T002 — Lancer un objet tenu (éditeur) — 2026-11-16
+
+**Objectif :** donner au joueur une touche « Lancer » et un objet de test qu'on peut vraiment saisir (Grab) puis lancer, placé près d'un mur pour le test « ne traverse pas ».
+**Étape du GDD :** §11 étape 3 (« Ajouter le lancer avec une impulsion limitée »), §6.2.
+**Branche :** `tache/T002-lancer-objet`
+
+> Les actions 4.1 à 4.4 ont été faites dans l'éditeur ouvert par les outils MCP (exécution Python à distance). Chacune est retraduite ci-dessous en clics, pour que tu puisses la refaire seul. **Le graphe de `BP_FirstPersonCharacter` (§4.5) n'a pas été touché** : le nœud *Launch* n'existera qu'après la recompilation du C++ (l'éditeur tourne encore avec l'ancienne DLL). C'est toi qui le montes.
+
+### 1. Fichiers créés / modifiés
+- `Content/Input/Actions/IA_Lancer.uasset` — **créé** — Input Action « Lancer » (booléen).
+- `Content/Input/IMC_Default.uasset` — **modifié** — une ligne ajoutée : `IA_Lancer` ← **clic droit**. Les 15 lignes existantes sont inchangées.
+- `Content/Nettoyeur/Preuves/BP_ObjetGrab_Test1.uasset` — **modifié** — la *Geometry Collection* vide est supprimée, le cube `StaticMesh` devient la racine ; échelle 0,4 ; masse imposée 25 kg ; profil **[Grab, Launch]** (Pull retiré).
+- `Content/__ExternalActors__/FirstPerson/Lvl_FirstPerson/3/6N/8BSGYZCK9EMQ2EXLYF0DEW.uasset` — **créé** — l'instance de `BP_ObjetGrab_Test1` placée dans `Lvl_FirstPerson` (un fichier par acteur, voir [One File Per Actor](#notion-ofpa)). Le `.umap` lui-même n'est pas modifié.
+- `doc/agents/editeur-contenu.md` (cette entrée), `doc/notions.md` (2 notions), `doc/taches/T002-lancer-objet.md` (statut).
+- **Non touchés :** `BP_FirstPersonCharacter`, tous les autres acteurs du niveau, le PointLight non suivi (`Content/__ExternalActors__/.../0/I6/`, signalé en T000 ; il est chargé dans le niveau sous le nom `PointLight_Orange`, en (0, 0, 300)).
+
+### 2. Implémentation du code
+Aucune (pas de C++ dans cette partie). Le code utilisé est `UInteractionComponent::Launch()` (voir `gameplay-cpp.md`, entrée T002).
+
+### 3. Configuration
+Aucune (pas de Project Settings ni de `.ini` modifiés).
+
+### 4. Étapes dans l'éditeur
+
+#### 4.0 Vérifications avant de modifier
+- **Dossier réel des Input Actions** : `Content/Input/Actions/` (y sont `IA_Essuyer`, `IA_Grab`, `IA_Pull`, `IA_Jump`, `IA_Move`, `IA_Look`, `IA_MouseLook`). C'est bien le chemin de la fiche.
+- **Touches déjà prises dans `IMC_Default`** : Espace, A/Croix manette, Z Q S D, les 4 flèches, sticks manette, **E** (Essuyer), **R** (Pull), **clic gauche** (Grab). `IMC_MouseLook` n'utilise que l'axe XY de la souris. → **Le clic droit est libre** : c'est lui qui est choisi (geste naturel : le clic gauche tient, le clic droit lance).
+- **Qui utilise `BP_ObjetGrab_Test1` ?** Clic droit sur l'asset → **Visualiseur de références (Reference Viewer)** : **rien à gauche** (aucun niveau, aucun Blueprint ne l'utilisait). Le changement de structure ne pouvait donc rien casser ailleurs. L'asset est aussi suivi par Git (LFS) : il peut être restauré à sa version d'avant avec Git si besoin.
+- **Aucun asset « sale »** (modifié non enregistré) dans l'éditeur avant de commencer.
+
+#### 4.1 Créer `IA_Lancer`
+1. **Content Browser** → dossier `Content/Input/Actions`.
+2. Clic droit dans le vide → **Entrée (Input)** → **Action d'entrée (Input Action)**.
+3. Nomme l'asset **`IA_Lancer`**, Entrée.
+4. Double-clique dessus. Panneau **Détails** → catégorie **Action** → **Type de valeur (Value Type)** = **Digital (bool)** (c'est la valeur par défaut : il n'y a rien à changer, mais vérifie-le). Pas de *Triggers*, pas de *Modifiers* (comme `IA_Grab`).
+5. **Enregistrer (Save)** (icône disquette ou `Ctrl+S`).
+
+Rappel : *Digital (bool)* = un bouton, appuyé ou non. Voir [Input Action et Input Mapping Context](#notion-enhanced-input).
+
+#### 4.2 Ajouter `IA_Lancer` au clic droit dans `IMC_Default`
+1. **Content Browser** → `Content/Input` → double-clic sur **`IMC_Default`**.
+2. À côté de **Mappings**, clique sur le **+** : une nouvelle ligne vide apparaît en bas.
+3. Dans le menu déroulant de la ligne (« None »), choisis **`IA_Lancer`**.
+4. Sous la ligne, clique sur l'icône **clavier** du sélecteur de touche, puis **clique avec le bouton droit de la souris** (ou déplie la liste et choisis **Bouton droit de la souris (Right Mouse Button)**).
+5. Ne mets **aucun** *Trigger* ni *Modifier* (comme `IA_Grab` : un appui simple).
+6. **Enregistrer**.
+
+Résultat : 16 mappings, la dernière ligne = `IA_Lancer` ← *Right Mouse Button*. Aucune autre ligne changée.
+
+#### 4.3 Rendre `BP_ObjetGrab_Test1` saisissable et lançable
+État avant (relevé en T000) : racine = `GeometryCollection` **vide** (aucune *Rest Collection*), enfant = `StaticMesh` (`SM_Cube`, 1 m de côté, *Simulate Physics* coché, *PhysicsActor*), `InteractionProfile` = **[Pull]**.
+
+Pourquoi changer la racine plutôt qu'ajouter un mesh : la racine est le composant qui **porte la position de l'acteur**. Un composant **enfant** qui simule la physique se détache en jeu : le cube tomberait et roulerait pendant que l'acteur (et sa position dans l'**Organiseur**) resterait sur place. Avec le mesh en racine, l'acteur **est** le cube. La *Geometry Collection* vide ne servait à rien (aucune géométrie) : elle est supprimée.
+
+1. **Content Browser** → `Content/Nettoyeur/Preuves` → double-clic sur **`BP_ObjetGrab_Test1`**.
+2. Panneau **Composants** : fais glisser **`StaticMesh`** et lâche-le **sur** `GeometryCollection` (la racine) → choisis **Faire de ce composant la nouvelle racine (Make New Root)**. (Variante : clic droit sur `StaticMesh` → **Définir comme racine (Set as Root)** selon la version.) `StaticMesh` passe en haut de l'arbre, `GeometryCollection` devient son enfant. Voir la notion [Changer le composant racine](#notion-changer-racine).
+3. Clic droit sur **`GeometryCollection`** → **Supprimer (Delete)** (ou touche Suppr).
+4. Sélectionne **`StaticMesh`** → panneau **Détails** :
+   - **Transformation (Transform)** → **Échelle (Scale)** = **0,4 / 0,4 / 0,4** (cube de 40 cm au lieu d'1 m) ;
+   - **Maillage statique (Static Mesh)** → *Static Mesh* = **`SM_Cube`** (`Content/LevelPrototyping/Meshes`, déjà en place, inchangé) ; matériau `MI_PrototypeGrid_Gray` inchangé ;
+   - **Physique (Physics)** → **Simuler la physique (Simulate Physics)** = **coché** (déjà coché, vérifié) ;
+   - **Physique** → **Masse (kg) (Mass (kg))** : coche la case à gauche du champ, puis valeur **25** ;
+   - **Physique** → options avancées → **Utiliser CCD (Use CCD)** : **laissé décoché** (le C++ l'active au moment du lancer) ;
+   - **Collision** → **Préréglages de collision (Collision Presets)** = **PhysicsActor** (déjà, vérifié). Voir [Simulate Physics et Collision Presets](#notion-collision-physique).
+5. Sélectionne **`InteractionProfile`** → **Détails** → catégorie *Interactions* → **Allowed Interactions** :
+   - élément 0 : remplace **Tirer (Pull)** par **Saisir (Grab)** ;
+   - clique **+** → élément 1 = **Lancer (Launch)**.
+   Résultat : **[Grab, Launch]**, sans Pull.
+6. **Compiler (Compile)** puis **Enregistrer (Save)**.
+
+Pourquoi 25 kg imposés : la masse calculée d'un cube dépend de sa taille (voir la notion [Masse d'un corps physique](#notion-masse-override)) ; en l'imposant, le résultat du lancer est **prévisible** : avec les réglages par défaut du C++ (`LaunchImpulse` 15000, `MaxLaunchSpeed` 1500), vitesse de départ = 15000 ÷ 25 = **600 cm/s** (6 m/s, un lancer d'objet lourd à deux mains). Pour le test « objet lourd » de `qa` (point 7), il suffit de changer cette valeur à 50 (→ 300 cm/s).
+
+Vérification faite après l'opération (relue dans l'éditeur) : composants = `StaticMesh` (racine) + `InteractionProfile` ; `Simulate Physics` vrai, preset `PhysicsActor`, masse de l'instance placée = **25,0 kg**, boîte englobante 40 × 40 × 40 cm.
+
+#### 4.4 Placer une instance dans `Lvl_FirstPerson`
+Emplacement choisi : **au sol, au nord de la plateforme centrale, 1,3 m devant un mur plat**. Le joueur apparaît sur la plateforme centrale (PlayerStart en (0, 0, 302)) ; il descend la rampe nord (`SM_Ramp12`) et trouve la caisse à gauche, contre le muret nord (`SM_Cube5`, face à y = 1800, 2 m de haut).
+
+1. Le niveau `Lvl_FirstPerson` est ouvert (carte de démarrage).
+2. **Content Browser** → `Content/Nettoyeur/Preuves` → fais glisser **`BP_ObjetGrab_Test1`** dans la fenêtre 3D.
+3. L'acteur sélectionné, panneau **Détails** → **Transformation** :
+   - **Emplacement (Location)** = **X −600, Y 1650, Z 1** ;
+   - **Rotation** = 0, 0, 0 ; **Échelle** = 1, 1, 1 (l'échelle 0,4 est dans le Blueprint, pas sur l'instance).
+   Z = 1 parce que le pivot de `SM_Cube` est **à la base** du cube (pas au centre) : Z = 1 le pose 1 cm au-dessus du sol (sol à Z = 0), il tombe dessus au lancement du jeu.
+4. Libellé dans l'**Organiseur (Outliner)** : `BP_ObjetGrab_Test1`.
+5. **Fichier → Enregistrer le niveau actuel (Save Current Level)**, ou `Ctrl+S` : seul le petit fichier de l'acteur est écrit (`Content/__ExternalActors__/FirstPerson/Lvl_FirstPerson/3/6N/8BSGYZCK9EMQ2EXLYF0DEW.uasset`).
+
+Distances : bord de la caisse (y = 1670) → mur (y = 1800) = **1,3 m** ; aucun autre obstacle à moins d'1 m (rampe `SM_Ramp7` à 2 m à l'ouest). Aucun acteur existant n'a été déplacé ni supprimé.
+
+#### 4.5 Graphe de `BP_FirstPersonCharacter` — À FAIRE PAR TOI, après recompilation
+**Pré-requis :** fermer l'éditeur, compiler le C++ (Build.bat, commande dans `CLAUDE.md` §6), rouvrir l'éditeur. Sans ça, le nœud *Launch* n'apparaît pas dans le menu.
+
+Ouvre `Content/FirstPerson/Blueprints/BP_FirstPersonCharacter` → onglet **Event Graph**. Repère le bloc **Grab** existant (`Ctrl+F` → « IA_Grab ») : il contient le nœud rouge **EnhancedInputAction IA_Grab**, un **Get InteractionComponent**, le nœud **Grab** (relié à *Started*) et un nœud **Release Grab** déjà présent mais **dont la broche exec d'entrée n'est reliée à rien** (relevé T000, §3.c).
+
+**a) Lancer (nouveau bloc, à poser sous le bloc Grab)**
+1. Clic droit dans le vide → tape **IA_Lancer** → choisis **EnhancedInputAction IA_Lancer** (catégorie *Événements d'entrée améliorés / Enhanced Action Events*).
+2. Dans le panneau **Composants**, fais glisser **InteractionComponent** dans le graphe → **Get InteractionComponent** (ou réutilise celui du bloc Grab : une sortie de données peut aller vers plusieurs nœuds).
+3. Tire un fil depuis la broche bleue **Interaction Component** de ce *Get* → tape **Launch** → choisis **Launch** (catégorie *Interaction | Lancer*). Le nœud est créé avec sa broche **Target** déjà reliée.
+4. Connexions :
+   - broche **Started** de *IA_Lancer* → broche **exec (entrée)** de *Launch* ;
+   - broche **Interaction Component** de *Get InteractionComponent* → broche **Target** de *Launch*.
+5. Laisse libres *Triggered, Ongoing, Canceled, Completed, Action Value* de *IA_Lancer*. **Started** = une fois par appui (sinon *Triggered*, appelé à chaque image tant que le bouton est tenu, relancerait à chaque image). Voir [Sorties d'un nœud d'Input Action](#notion-evenements-input).
+
+**b) Relâcher le clic gauche lâche l'objet (B2, hérité de T000)** — dans le bloc Grab existant, rien à créer :
+1. broche **Completed** de *IA_Grab* → broche **exec (entrée)** du nœud **Release Grab** existant ;
+2. broche **Canceled** de *IA_Grab* → **même** broche exec d'entrée de *Release Grab* (une broche exec d'entrée accepte plusieurs fils) ;
+3. vérifie que **Target** de *Release Grab* est bien relié à **Interaction Component** du *Get InteractionComponent* du bloc (c'était le cas en T000).
+C'est exactement le montage déjà en place pour Pull (*IA_Pull* Completed + Canceled → Release Grab).
+
+**c) Compiler (Compile)** (bouton en haut à gauche, il doit devenir vert) puis **Enregistrer (Save)**.
+
+Ordre des événements, pour comprendre : tu tiens le clic gauche (Grab), tu appuies sur le clic droit → *Launch* relâche l'objet et le lance ; quand tu relâches ensuite le clic gauche, *Release Grab* est appelé alors que rien n'est tenu → il ne fait rien (prévu dans le C++). Garder `IA_Lancer` séparé de `IA_Grab` est indispensable : si la même touche déclenchait aussi *Release Grab* avant *Launch*, il n'y aurait plus rien à lancer.
+
+**Vérification attendue de ta part :** une capture de ces deux blocs (ou un copier-coller texte des nœuds, voir [Copier des nœuds en texte](#notion-copier-noeuds-texte)) pour que `qa` contrôle les fils.
+
+<a id="notion-changer-racine"></a>
+> **Notion nouvelle — Changer le composant racine d'un Blueprint**
+> Le composant **racine** (en haut de l'arbre du panneau **Composants**) définit la position, la rotation et l'échelle de l'acteur entier ; tous les autres composants de scène le suivent. Pour mettre un autre composant à sa place : glisse ce composant **sur** la racine actuelle et choisis **Make New Root** (l'ancienne racine devient son enfant), puis supprime l'ancienne racine si elle ne sert plus. Une racine ne peut pas être supprimée tant qu'elle a plusieurs enfants sans remplaçant ; un composant hérité du C++ ne peut pas être déplacé. Pourquoi c'est important pour la physique : si un composant **enfant** simule la physique, il se détache de l'acteur en jeu ; l'acteur reste là où il était placé, seul le mesh tombe. Pour un objet qu'on saisit ou qu'on lance, le mesh qui simule doit donc être la **racine**. Avant ce genre de changement : vérifier que rien ne référence le Blueprint (Reference Viewer) et avoir un commit propre.
+
+<a id="notion-masse-override"></a>
+> **Notion nouvelle — Masse d'un corps physique (calculée ou imposée, *Mass (kg)*)**
+> Par défaut, Unreal **calcule** la masse d'un objet physique à partir du volume de sa forme de collision et de la densité de son matériau physique (puis la « tasse » un peu pour que les gros objets ne soient pas absurdes) : un cube deux fois plus grand est beaucoup plus lourd. On le lit dans **Détails → Physique → Masse (kg)** (champ grisé). Cocher la case à gauche de ce champ **impose** la masse (ici 25 kg) : elle ne dépend plus ni de la taille ni de l'échelle. On le fait quand on veut un comportement **prévisible** (lancer, poids porté), comme ici. L'échelle de l'objet ne change alors plus sa masse. La masse compte pour le Physics Handle (un objet lourd suit moins vite) et pour le lancer (voir [Impulsion, masse et AddImpulse](gameplay-cpp.md#notion-impulsion-addimpulse)).
+
+### 5. Compilation et tests
+- Compilation C++ : hors de mon périmètre ; faite ensuite par `qa` le 2026-11-16 (éditeur fermé) : 0 erreur, 0 avertissement.
+- Blueprint `BP_ObjetGrab_Test1` : compilé sans erreur dans l'éditeur.
+- Vérifications faites (lecture dans l'éditeur, pas en jeu) : liste des mappings de `IMC_Default` (16 lignes, dernière `IA_Lancer` ← Right Mouse Button) ; `IA_Lancer` Value Type = Digital (bool) ; composants et réglages de `BP_ObjetGrab_Test1` (§4.3) ; instance placée en (−600, 1650, 1), masse 25 kg ; plus aucun asset sale après l'enregistrement.
+- **Test en jeu : non réalisé.** Impossible tant que le C++ n'est pas compilé et le graphe monté. Procédure (développeur puis `qa`, liste complète dans la fiche) :
+  1. Recompiler, monter le graphe §4.5, **Compile** + **Save**.
+  2. **Jouer (Play)** dans `Lvl_FirstPerson`, descendre la rampe nord, aller à la caisse grise de 40 cm devant le muret.
+  3. Viser la caisse : *attendu* le prompt « Clic gauche : Saisir » (une ligne).
+  4. Tenir le clic gauche : la caisse est saisie ; relâcher : elle tombe (B2).
+  5. Saisir, viser le muret, clic droit : la caisse part vers le muret (~6 m/s), rebondit, ne le traverse pas ; le prompt réapparaît.
+  6. Clic droit sans rien tenir : rien, rien dans l'Output Log.
+
+### 6. Git
+- Branche : `tache/T002-lancer-objet` (active, non changée).
+- Commits : **aucun** (consigne de l'orchestrateur). Les 2 nouveaux `.uasset` passent bien par LFS (`git check-attr filter` → `lfs`).
+
+### 7. Résultat et points ouverts
+- Fait par outil (retraduit ci-dessus) : `IA_Lancer`, mapping clic droit, `BP_ObjetGrab_Test1` (racine, échelle, masse, profil), instance dans le niveau, enregistrement des 4 fichiers seulement.
+- **Laissé au développeur** : recompilation, puis graphe §4.5 (Lancer + Release Grab sur Completed/Canceled de IA_Grab).
+- Le prompt du widget n'a pas d'entrée *Lancer* (non demandé, voir fiche) : avec [Grab, Launch], il n'affichera qu'une ligne ; le multi-lignes de T001 reste non vérifiable avec cet objet.
+- `PointLight_Orange` (fichier non suivi `.../0/I6/`) toujours présent dans le niveau, non touché : décision au développeur.
+- Le C++ n'étant pas compilé, l'enum *Lancer (Launch)* existait déjà (T001) : le profil [Grab, Launch] est donc valide dès maintenant, sans recompilation.
+
+---
+
 ## T000 (partie A) — Vérifier la config éditeur et documenter l'existant — 2026-11-11
 
 **Objectif :** savoir exactement comment le prototype est câblé côté éditeur (Blueprints, inputs, widget, niveaux, réglages) avant de toucher au code, pour que les tâches T001+ partent d'une base connue.
