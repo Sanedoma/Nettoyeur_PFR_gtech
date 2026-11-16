@@ -2,6 +2,37 @@
 
 > Entrées selon `doc/CONVENTION.md`, la plus récente en haut.
 
+## T001 — Unifier la visée, nettoyage par le profil, prompt par interaction — 2026-11-13 → 2026-11-16
+
+### 1. Fichiers créés / modifiés
+- `doc/taches/T001-unifier-visee.md` : statut « En cours » → « Terminé » ; section « Extension demandée par le développeur (2026-11-16) » ajoutée (prompt par interaction) ; critères cochés après validation en jeu.
+- `doc/00_etat-projet.md` : T001 terminée, dette n° 1, 2, 4, 5, 7, 13, 16 et B1 soldées, n° 15 partielle ; remarques QA reportées pour T003/T004 ; T002 en cours.
+- `doc/decisions.md` : D007 (prompt = widget à parent C++).
+- `doc/agents/gameplay-cpp.md` : deux corrections factuelles (« 5 notions », compilation faite par QA).
+- Ce journal.
+
+### 2. Implémentation du code
+Aucune par l'orchestrateur : voir `doc/agents/gameplay-cpp.md` (T001 et T001 extension).
+
+### 3. Configuration
+Aucune.
+
+### 4. Étapes dans l'éditeur
+Aucune par l'orchestrateur. Le développeur a : nettoyé les graphes (B1) de `BP_FirstPersonCharacter` et `WBP_Interaction` ; reparenté `WBP_Interaction` vers `WidgetInteraction` (Graph → Class Settings → Parent Class) ; supprimé la fonction `AfficherInteraction`.
+
+### 5. Compilation et tests
+- QA ×2 : Build.bat éditeur fermé, 0 erreur, 0 avertissement (2026-11-13 et 2026-11-16).
+- Validation humaine en jeu : OK le 2026-11-16. Non testables : Grab (aucun objet [Grab], T002) et l'affichage multi-lignes (aucun objet à deux interactions).
+
+### 6. Git
+- Branche `tache/T001-unifier-visee` depuis `master`.
+- Commits : partie principale (commit de sauvegarde avant l'extension), extension + B1 (commit de sécurité avant reparentage), reparentage de `WBP_Interaction` + documentation de clôture.
+- Merge `--no-ff` dans `master`, push. Exclu volontairement : le PointLight non suivi (`Content/__ExternalActors__/.../I6/`), décision du développeur attendue.
+
+### 7. Résultat et points ouverts
+- T001 terminée. Tâche suivante lancée : T002.
+- Toujours en attente du développeur : le PointLight non suivi, `BP_FirstPersonCharacter_Backup`.
+
 ## T000 — Vérifier la config éditeur et documenter l'existant — 2026-11-12
 
 ### 1. Fichiers créés / modifiés

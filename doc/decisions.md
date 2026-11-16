@@ -27,3 +27,8 @@
 - Ajout du plugin **EngineWire** (activé, Win64/Mac/Linux) : il permet aux agents de piloter l'éditeur ouvert par MCP (inspection d'assets, Play, captures).
 **Raison :** outillage du workflow agentique (D004) ; changement fait par le développeur.
 **Équivalent manuel :** Edit → Plugins → chercher « EngineWire » → cocher *Enabled* → redémarrer l'éditeur. L'association moteur se change par clic droit sur `Nettoyeur.uproject` → *Switch Unreal Engine version…* → 5.7.
+
+## D007 — Le prompt est un widget à parent C++ qui écoute la visée — 2026-11-16
+**Décision :** `WBP_Interaction` a pour parent la classe C++ `UWidgetInteraction`. Le widget s'abonne lui-même à `UInteractionComponent::OnFocusChanged` et `OnHoldChanged` et affiche une ligne par interaction autorisée par le profil de la cible (textes dans la table `TextesInteractions`, réglable dans les Class Defaults). Aucun composant de gameplay ne pilote le prompt ; `UInteractionComponent` est la seule source de la visée.
+**Raison :** supprime l'appel par nom (`FindFunction` + `ProcessEvent`, dette n° 5) ; un nouveau type d'interaction n'exige qu'une ligne dans la table, pas de code dans chaque composant.
+**Conséquence :** les widgets liés (`BindWidget`) `TexteInteraction` et `BarProgression` ne doivent pas être renommés dans le Designer.
