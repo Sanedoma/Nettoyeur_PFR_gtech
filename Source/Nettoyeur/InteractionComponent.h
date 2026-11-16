@@ -11,6 +11,9 @@ class UPrimitiveComponent;
 /** Diffusé quand l'acteur visé change (NewFocus vaut nullptr quand on ne vise plus rien). */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnFocusChanged, AActor*, NewFocus);
 
+/** Diffusé quand le joueur commence (true) ou cesse (false) de tenir un objet (Pull ou Grab). */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHoldChanged, bool, bIsHolding);
+
 /**
  * Seule source de la visée du joueur : un sweep par image désigne l'acteur visé
  * (CurrentFocus). Gère aussi la saisie physique Pull / Grab des objets qui l'autorisent.
@@ -44,6 +47,10 @@ public:
     /** Diffusé à chaque changement de cible visée. */
     UPROPERTY(BlueprintAssignable, Category = "Interaction|Visee")
     FOnFocusChanged OnFocusChanged;
+
+    /** Diffusé quand un objet est saisi ou relâché (le prompt se masque pendant qu'on tient). */
+    UPROPERTY(BlueprintAssignable, Category = "Interaction|Tenir")
+    FOnHoldChanged OnHoldChanged;
 
     /** Le Physics Handle est créé par le personnage propriétaire. */
     void SetPhysicsHandle(UPhysicsHandleComponent* InPhysicsHandle);

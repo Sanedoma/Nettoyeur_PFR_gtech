@@ -64,7 +64,7 @@ Nettoyage du graphe de `BP_FirstPersonCharacter` (bloc mort Line Trace + Print S
 ## Extension demandée par le développeur (orchestrateur, 2026-11-16)
 **Demande :** « régler l'affichage pour afficher le message correspondant pour chaque interaction ». Le prompt ne connaît aujourd'hui que le nettoyage (texte figé « Appuie sur E pour nettoyer »).
 
-**Statut de l'extension :** En cours — `gameplay-cpp`. La partie principale de T001 reste « Validé QA — en attente du développeur ».
+**Statut de l'extension :** Validé QA (hors jeu) — en attente du développeur (2026-11-16). Compilation OK (0 erreur, 0 avertissement), code et doc relus ; reparentage de `WBP_Interaction` et tests en jeu à faire par le développeur (rapport « QA T001 (extension) » dans `doc/agents/qa.md`). La partie principale de T001 reste « Validé QA — en attente du développeur ».
 
 ### Travail attendu
 1. Nouvelle classe C++ `UWidgetInteraction` (parent `UUserWidget`), fichiers `WidgetInteraction.h/.cpp`, qui deviendra le parent de `WBP_Interaction` :
@@ -86,5 +86,25 @@ Ceux de T001 + `WidgetInteraction.h/.cpp` (nouveaux), `InteractionProfileCompone
 - [ ] Les textes se modifient dans les Class Defaults de `WBP_Interaction` sans recompiler le C++.
 - [ ] Prompt masqué pendant qu'on tient un objet (Pull).
 - [ ] Nettoyage, barre et « mission terminée » inchangés.
-- [ ] Plus aucun `ProcessEvent` / `FindFunction` dans `Source/`.
-- [ ] Compilation sans avertissement ; journal et notions à jour.
+- [x] Plus aucun `ProcessEvent` / `FindFunction` dans `Source/`. _(QA 2026-11-16)_
+- [x] Compilation sans avertissement ; journal et notions à jour. _(QA 2026-11-16)_
+
+### Livraison gameplay-cpp — extension (2026-11-16)
+Détail : `doc/agents/gameplay-cpp.md`, entrée « T001 (extension) — Prompt par interaction ». **Compilation non faite** : l'éditeur était ouvert (nouvelle `UCLASS` → Build.bat éditeur fermé obligatoire). **Non testé en jeu.** Aucun commit.
+
+Fichiers : `WidgetInteraction.h/.cpp` (créés), `InteractionComponent.h/.cpp` (delegate `OnHoldChanged`), `ComposantNettoyage.h/.cpp` (prompt retiré). `InteractionProfileComponent` et `Nettoyeur.Build.cs` non modifiés.
+
+#### À vérifier par `qa`
+1. **Compilation** Build.bat éditeur fermé : 0 erreur / 0 avertissement.
+2. `grep` dans `Source/` : aucun `ProcessEvent`, `FindFunction`, `MettreAJourTexteInteraction`.
+3. **Reparentage** de `WBP_Interaction` → `WidgetInteraction` (procédure journal §4.a) : le WBP compile sans erreur de *widget binding* ; `MettreAJourProgression` et `AfficherMissionTerminee` toujours présents et appelés par le personnage ; `BP_FirstPersonCharacter` compile (nœud *Definir Widget Interaction* intact).
+4. **Class Defaults** de `WBP_Interaction` → **Interaction | Prompt** → *Textes Interactions* : Essuyer → « E : Nettoyer », Tirer → « R (maintenir) : Tirer », Saisir → « Clic gauche : Saisir ».
+5. **En jeu** (procédure journal §4.d) : rien visé → rien ; preuve → « E : Nettoyer » + barre ; `BP_ObjetPull_Test` → « R (maintenir) : Tirer » sans barre ; R maintenu → prompt masqué, relâché → revient.
+6. **Plusieurs interactions** : instance avec [Tirer, Saisir] (sans enregistrer) → deux lignes, ordre de la table.
+7. **Texte modifié** dans les Class Defaults → affiché sans recompiler le C++.
+8. **Nettoyage inchangé** : 4 × E → 0.25 → 1.0, disparition, « MISSION TERMINÉE ! ».
+9. **Output Log** : pas d'avertissement « WidgetInteraction : aucun InteractionComponent… ».
+10. Journal et `doc/notions.md` (4 notions : BindWidget, NativeConstruct/NativeDestruct, TMap, FText/LOCTEXT) conformes à `doc/CONVENTION.md`.
+
+#### Pour le développeur
+Fermer l'éditeur → compiler → commit (code + `BP_FirstPersonCharacter.uasset` modifié dans l'éditeur, à vérifier) → reparentage de `WBP_Interaction` et suppression conseillée de la fonction `AfficherInteraction` (journal §4.a à c).

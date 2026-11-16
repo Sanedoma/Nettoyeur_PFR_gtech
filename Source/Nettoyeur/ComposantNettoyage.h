@@ -15,8 +15,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
 
 /**
  * Nettoyage des preuves visées. Ne vise pas lui-même : il lit la cible de
- * l'UInteractionComponent du même acteur et réagit à son événement OnFocusChanged.
+ * l'UInteractionComponent du même acteur au moment de l'appui.
  * Une cible est nettoyable si son profil d'interactions autorise Wipe.
+ * Le prompt n'est plus piloté ici : UWidgetInteraction écoute directement la visée.
  */
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class NETTOYEUR_API UComposantNettoyage : public UActorComponent
@@ -26,7 +27,10 @@ class NETTOYEUR_API UComposantNettoyage : public UActorComponent
 public:
 	UComposantNettoyage();
 
-	/** Widget du prompt, donné par le Blueprint via DefinirWidgetInteraction. */
+	/**
+	 * Widget du prompt, donné par le Blueprint via DefinirWidgetInteraction.
+	 * Simple référence conservée : le C++ ne l'utilise plus (voir UWidgetInteraction).
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Interface")
 	TObjectPtr<UUserWidget> WidgetInteraction;
 
@@ -41,25 +45,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Nettoyage")
 	void TenterNettoyage();
 
+	/**
+	 * Mémorise le widget du prompt. Gardée pour ne pas casser le nœud du Blueprint
+	 * du personnage ; le widget se met désormais à jour tout seul.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Interface")
 	void DefinirWidgetInteraction(UUserWidget* Widget);
 
-	/** Affiche ou masque le prompt en appelant la fonction AfficherInteraction du widget. */
-	UFUNCTION()
-	void MettreAJourTexteInteraction(bool Afficher);
-
 protected:
 	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	/** Composant de visée du même acteur, trouvé une seule fois au BeginPlay. */
 	UPROPERTY(Transient)
 	TObjectPtr<UInteractionComponent> ComposantInteraction;
-
-	/** Abonné à UInteractionComponent::OnFocusChanged (doit être une UFUNCTION). */
-	UFUNCTION()
-	void GererChangementCible(AActor* NouvelleCible);
 
 	/** Vrai si une cible est visée et que son profil autorise Wipe. */
 	bool PeutNettoyerCible() const;

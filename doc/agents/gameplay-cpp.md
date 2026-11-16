@@ -4,6 +4,180 @@
 
 ---
 
+## T001 (extension) — Prompt par interaction — 2026-11-16
+
+**Objectif :** le prompt affiche le message qui correspond à **chaque** interaction que l'objet visé autorise (« E : Nettoyer », « R (maintenir) : Tirer », « Clic gauche : Saisir »…), au lieu du seul texte figé « Appuie sur E pour nettoyer ». La barre de nettoyage n'apparaît que sur un objet essuyable. Le prompt se cache pendant qu'on tient un objet.
+**Étape du GDD :** §11 étape 2 ; §6.1 « interactions indépendantes et assignables ».
+**Branche :** `tache/T001-unifier-visee`
+
+### 1. Fichiers créés / modifiés
+- `Source/Nettoyeur/WidgetInteraction.h` — **créé** — classe C++ `UWidgetInteraction` (parent `UUserWidget`), future classe parente de `WBP_Interaction`. Déclare la table réglable `TextesInteractions`, les deux éléments liés `TexteInteraction` / `BarProgression` et l'abonnement à la visée.
+- `Source/Nettoyeur/WidgetInteraction.cpp` — **créé** — remplit la table par défaut, s'abonne / se désabonne, calcule les lignes du prompt et la visibilité de la barre.
+- `Source/Nettoyeur/InteractionComponent.h` — modifié — nouveau delegate `FOnHoldChanged` / `OnHoldChanged` (début / fin de tenue d'un objet).
+- `Source/Nettoyeur/InteractionComponent.cpp` — modifié — `Pull()` et `Grab()` diffusent `OnHoldChanged(true)` quand la saisie a réussi ; `ReleaseGrab()` diffuse `OnHoldChanged(false)` **seulement** si un objet était tenu. Logique de saisie / tenue inchangée.
+- `Source/Nettoyeur/ComposantNettoyage.h` / `.cpp` — modifiés — le composant **ne pilote plus le prompt** : suppression de `MettreAJourTexteInteraction` (et donc du seul `FindFunction` / `ProcessEvent` du projet), de `GererChangementCible`, de l'abonnement à `OnFocusChanged` et de `EndPlay` (il ne servait qu'au désabonnement) ; include `UObject/UnrealType.h` retiré. `DefinirWidgetInteraction` reste (le nœud du Blueprint du personnage n'est pas cassé) mais ne fait plus que mémoriser le widget. `TenterNettoyage`, `OnProgressionNettoyageChanged`, `bAfficherDebug` : inchangés.
+- `InteractionProfileComponent.h/.cpp` — **non modifiés** : `CanFocusPerform` (qui lit déjà le profil) suffit, voir §2.2.
+- `doc/agents/gameplay-cpp.md` — cette entrée. `doc/notions.md` — 4 notions ajoutées. `doc/taches/T001-unifier-visee.md` — statut de l'extension « Prêt pour QA » + liste pour `qa`.
+
+Dette traitée : **n° 5 soldée** (plus aucun appel de fonction Blueprint par son nom).
+
+### 2. Implémentation du code
+
+#### 2.1 Pourquoi retirer le `ProcessEvent` et donner le prompt au widget
+Avant, c'était `UComposantNettoyage` (un composant de **nettoyage**) qui décidait d'afficher le prompt, en appelant la fonction Blueprint `AfficherInteraction` **par son nom** (voir [FindFunction + ProcessEvent](#notion-processevent)). Trois défauts :
+- **Mauvais responsable.** Le nettoyage ne connaît que `Wipe`. Pour afficher « Tirer » ou « Saisir », il aurait fallu que le nettoyage connaisse Pull et Grab : absurde.
+- **Fragile.** Un nom écrit dans une chaîne (`"AfficherInteraction"`) n'est pas vérifié par le compilateur : renommer la fonction dans le Blueprint cassait le prompt sans erreur (d'où le garde-fou de signature ajouté en T001).
+- **Un booléen ne suffit plus.** On a besoin d'un texte différent par interaction, pas d'un simple « afficher / masquer ».
+
+La solution standard d'Unreal : une **classe C++ parente du Widget Blueprint**. Le widget sait lui-même ce qu'il affiche ; il lit la visée (source unique, voir [notion](#notion-source-unique-evenement)) et réagit à ses événements. Le C++ manipule le texte et la barre **directement**, par des pointeurs typés, grâce à `BindWidget` (§2.3) : plus aucun nom de fonction en chaîne.
+
+#### 2.2 Lire les interactions de la cible sans dupliquer de logique
+La fiche demandait d'exposer « ce qu'il faut ». Il n'y avait en fait rien à ajouter : `UInteractionComponent::CanFocusPerform(Type)` répond déjà à « la cible visée a-t-elle un profil qui autorise ce type ? » (et renvoie faux si rien n'est visé ou sans profil). Le widget **parcourt sa propre table** et pose la question pour chaque entrée :
+
+```cpp
+for (const TPair<EInteractionType, FText>& Entree : TextesInteractions)
+{
+    if (!Entree.Value.IsEmpty() && ComposantInteraction->CanFocusPerform(Entree.Key))
+    {
+        Lignes.Add(Entree.Value);
+    }
+}
+```
+
+Conséquences voulues : l'ordre des lignes est **l'ordre de la table** (pas celui du profil de l'objet, qui peut varier d'un objet à l'autre) ; une interaction du profil **absente de la table** (ex. `Open`, pas encore implémentée) n'affiche rien ; une entrée de table au texte **vide** est ignorée (pratique pour couper une ligne sans la supprimer). Je n'ai donc pas touché à `InteractionProfileComponent` : pas de deuxième façon de lire le profil.
+
+#### 2.3 `WidgetInteraction.h` — la classe et ses propriétés
+- `UCLASS()` sans `Blueprintable` : un `UUserWidget` est déjà utilisable comme parent de Widget Blueprint (la possibilité est héritée).
+- Constructeur `UWidgetInteraction(const FObjectInitializer& ObjectInitializer)` : `UUserWidget` n'a pas de constructeur sans paramètre, on reprend donc cette forme et on appelle `Super(ObjectInitializer)`. C'est là que la table reçoit ses valeurs par défaut (même principe que les valeurs par défaut des acteurs, voir [constructeur / CDO](#notion-createdefaultsubobject)).
+- `TextesInteractions` : `UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Interaction|Prompt")`, une [TMap](#notion-tmap) dont la clé est l'énumération `EInteractionType` et la valeur un [FText](#notion-ftext-loctext). Elle apparaît dans les **Class Defaults** de `WBP_Interaction` : on change les textes sans recompiler le C++.
+- `TexteInteraction` (`UTextBlock`) et `BarProgression` (`UProgressBar`) : `meta = (BindWidget)`, voir la notion ci-dessous. J'ai vérifié les noms : ils figurent dans la description du Concepteur (`doc/agents/editeur-contenu.md`, T000 point 4.b) **et** dans le fichier `Content/Nettoyeur/WBP_Interaction.uasset` (recherche de texte : `TexteInteraction`, `BarProgression` et les classes `TextBlock` / `ProgressBar` y sont). J'ai donc pris `BindWidget` (obligatoire) et non `BindWidgetOptional` : si un nom ne correspond pas, la compilation du WBP le dit clairement au lieu de laisser un prompt muet.
+- `ComposantInteraction` : pointeur privé en [Transient](#notion-transient), trouvé en jeu.
+- `GererChangementCible(AActor*)` et `GererChangementTenue(bool)` : `UFUNCTION()` privées, obligatoires pour [AddDynamic](#notion-adddynamic-endplay) ; leur signature recopie celle du delegate.
+
+<a id="notion-bindwidget"></a>
+> **Notion nouvelle — `meta = (BindWidget)` / `BindWidgetOptional` : relier un pointeur C++ à un élément du Concepteur**
+> Quand un Widget Blueprint a une classe parente C++, une `UPROPERTY` de type widget marquée `meta = (BindWidget)` est **remplie automatiquement** par Unreal avec l'élément du Concepteur qui porte **exactement le même nom** et un type compatible. Exemple : `TObjectPtr<UTextBlock> TexteInteraction;` reçoit le *Text* nommé `TexteInteraction` dans la Hiérarchie. Le C++ peut alors faire `TexteInteraction->SetText(...)` sans aucun nœud Blueprint.
+> - **`BindWidget`** : l'élément est **obligatoire**. S'il manque (nom différent, mauvais type), le Widget Blueprint **refuse de compiler**, avec un message du type « A required widget binding "TexteInteraction" of type Text Block was not found ».
+> - **`BindWidgetOptional`** : l'élément peut manquer ; le pointeur vaut alors `nullptr` (le code doit le tester).
+> Quand l'élément existe déjà dans le WBP (notre cas), le reparentage suffit : le WBP n'a plus besoin de créer sa propre variable, il utilise celle du C++. Les nœuds *Get TexteInteraction* des graphes continuent de fonctionner (même nom). (Ajoutée à `doc/notions.md`.)
+
+<a id="notion-tmap"></a>
+> **Notion nouvelle — `TMap<Clé, Valeur>` (et TMap éditable dans les Details)**
+> Une `TMap` est un **dictionnaire** : elle associe à chaque **clé** unique une **valeur**. `TMap<EInteractionType, FText>` = « pour chaque type d'interaction, un texte ». Opérations courantes : `Add(Clé, Valeur)` (ajoute ou remplace), `Find(Clé)` (renvoie un pointeur vers la valeur, `nullptr` si absente), `Contains(Clé)`, et la boucle `for (const TPair<K, V>& Entree : Map)` où `Entree.Key` / `Entree.Value` donnent chaque paire. Marquée `UPROPERTY(EditAnywhere)`, elle s'affiche dans les Details sous forme de lignes « clé → valeur » avec un bouton **+** pour ajouter une ligne et un menu à droite de chaque ligne pour la supprimer. Une clé ne peut pas apparaître deux fois : l'éditeur refuse un doublon. L'**ordre de parcours** est en pratique l'ordre d'ajout (celui affiché dans les Details) ; attention, si on supprime une ligne puis en ajoute une autre, la nouvelle peut prendre la place libérée. Comparaison : un [TArray](#notion-tarray) est une liste numérotée (0, 1, 2…), une `TMap` se consulte par clé. (Ajoutée à `doc/notions.md`.)
+
+<a id="notion-ftext-loctext"></a>
+> **Notion nouvelle — `FText`, `FString`, `LOCTEXT`**
+> Unreal a trois types de texte : `FName` (identifiant, voir [notion](#notion-text-fname)), `FString` (chaîne modifiable, pour le code et les logs) et **`FText`**, le texte **affiché au joueur**. `FText` est prévu pour la **traduction** : chaque texte écrit avec `LOCTEXT("Cle", "Texte")` reçoit un identifiant (un *namespace*, défini par `#define LOCTEXT_NAMESPACE "WidgetInteraction"` en haut du `.cpp` et retiré par `#undef` en bas, plus la clé) que l'outil de localisation d'Unreal sait retrouver. C'est pour cela que les widgets UMG (`UTextBlock::SetText`) prennent un `FText`, et que les textes réglables de l'interface sont des `FText` et pas des `FString`. `FText::Join(Séparateur, Tableau)` colle plusieurs `FText` avec un séparateur ; ici le séparateur est un retour à la ligne créé par `FText::AsCultureInvariant(TEXT("\n"))`, qui signifie « texte qui ne se traduit pas ». (Ajoutée à `doc/notions.md`.)
+
+#### 2.4 `WidgetInteraction.cpp` — cycle de vie et abonnement
+
+<a id="notion-nativeconstruct"></a>
+> **Notion nouvelle — `NativeConstruct` / `NativeDestruct` (cycle de vie d'un widget en C++)**
+> Un widget n'a pas de `BeginPlay`. Ses équivalents sont **`NativeConstruct()`**, appelée quand le widget est réellement construit pour l'écran (en pratique au moment de **Add to Viewport**), et **`NativeDestruct()`**, appelée quand il est retiré de l'écran (Remove from Parent, fin de partie, changement de niveau). Ce sont les versions C++ des événements Blueprint **Event Construct** / **Event Destruct** : redéfinir la version C++ (avec `override` et `Super::`, voir [notion](#notion-virtual-override-super)) n'empêche pas le Blueprint d'utiliser *Event Construct*. Un même widget peut être retiré puis remis à l'écran : `NativeConstruct` peut donc être appelée **plusieurs fois** ; c'est pourquoi on s'abonne avec **`AddUniqueDynamic`** (comme `AddDynamic`, mais ne fait rien si on est déjà abonné) et qu'on se désabonne dans `NativeDestruct`. Pour retrouver le joueur, un widget dispose de `GetOwningPlayer()` (le PlayerController donné à *Create Widget* en *Owning Player*) et de **`GetOwningPlayerPawn()`** (le pawn que ce PlayerController possède). (Ajoutée à `doc/notions.md`.)
+
+Déroulé :
+1. **`NativeConstruct`** : `GetOwningPlayerPawn()` → `FindComponentByClass<UInteractionComponent>()` sur ce pawn. Le personnage crée le widget avec *Owning Player* = *Get Player Controller 0* (T000 point 4.a), donc le pawn propriétaire est bien `BP_FirstPersonCharacter`, qui porte l'`InteractionComponent`. En début de partie, le pawn du joueur est possédé avant que les `BeginPlay` ne soient lancés : il est donc connu quand le personnage fait *Add to Viewport*. Sinon (widget créé ailleurs, sans pawn), un avertissement « WidgetInteraction : aucun InteractionComponent… » part dans l'Output Log et le prompt reste masqué : **pas de plantage**.
+2. Abonnement à **deux** événements : `OnFocusChanged` (la cible change) et le nouveau `OnHoldChanged` (on saisit / relâche). Puis **`RafraichirPrompt()` immédiatement** : les événements ne partent qu'aux changements, il faut donc afficher l'état de départ (rien visé → tout masqué). C'est le rôle que jouait avant `DefinirWidgetInteraction`.
+3. **`NativeDestruct`** : `RemoveDynamic` des deux abonnements, pointeur remis à `nullptr`. Sans cela, le composant de visée garderait dans sa liste un widget détruit.
+
+`RafraichirPrompt()` (la seule fonction qui écrit à l'écran) :
+- si un objet est tenu (`IsHoldingObject()`) ou s'il n'y a pas d'`InteractionComponent` → aucune ligne ;
+- sinon, une ligne par entrée de la table autorisée par la cible (§2.2) ;
+- au moins une ligne → `SetText(FText::Join("\n", Lignes))` + `Visible` ; aucune → `Hidden` (mêmes visibilités que l'ancienne fonction Blueprint `AfficherInteraction`) ;
+- la barre est `Visible` seulement si rien n'est tenu **et** `CanFocusPerform(Wipe)`. Son **remplissage** n'est pas touché : il reste fait par la fonction Blueprint `MettreAJourProgression` (*Set Percent*), appelée depuis le personnage sur `OnProgressionNettoyageChanged`. « MISSION TERMINÉE ! » (`AfficherMissionTerminee`, sur `TexteObjectifMission`) est inchangé ;
+- tous les pointeurs (`TexteInteraction`, `BarProgression`, `ComposantInteraction`) sont testés avant usage.
+
+Pourquoi pas de `NativeTick` (l'équivalent du Tick pour un widget) : le prompt ne change que quand la cible change ou quand on saisit / relâche ; deux événements suffisent (voir [Tick](#notion-tick)).
+
+#### 2.5 `InteractionComponent` — le delegate `OnHoldChanged`
+`OnFocusChanged` ne suffit pas pour « masquer pendant qu'on tient » : quand on tire un objet avec R, on **continue de le viser**, la cible ne change pas, donc aucun événement ne partirait. D'où un second [delegate dynamique multicast](#notion-delegate-dynamique-multicast), déclaré à côté du premier :
+
+```cpp
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnHoldChanged, bool, bIsHolding);
+...
+UPROPERTY(BlueprintAssignable, Category = "Interaction|Tenir")
+FOnHoldChanged OnHoldChanged;
+```
+
+- `Pull()` / `Grab()` : à la fin, `if (IsHoldingObject()) OnHoldChanged.Broadcast(true);` — on vérifie que le Physics Handle a vraiment attrapé l'objet avant de l'annoncer.
+- `ReleaseGrab()` : le Blueprint l'appelle **à chaque relâchement** de R / du clic, même si on ne tenait rien. On mémorise donc `bWasHolding = IsHoldingObject()` **avant** de relâcher, et on ne diffuse `false` que si un objet était tenu. Cela couvre aussi le relâchement automatique au bord d'un vide (`UpdateHold` appelle `ReleaseGrab`). La condition `PhysicsHandle && PhysicsHandle->GrabbedComponent` est exactement celle de `IsHoldingObject()` : comportement de relâchement identique.
+- `BlueprintAssignable` : un futur Blueprint (son de saisie, viseur…) pourra s'y abonner avec *Bind Event to On Hold Changed*.
+
+#### 2.6 `ComposantNettoyage` — ce qui reste
+Le composant garde son `BeginPlay` (il trouve toujours l'`InteractionComponent`, nécessaire à `TenterNettoyage`) mais ne s'abonne plus à rien, d'où la suppression de `EndPlay` et de `GererChangementCible`. `DefinirWidgetInteraction(Widget)` ne fait plus que `WidgetInteraction = Widget;` : je l'ai **gardée** parce que l'Event Graph de `BP_FirstPersonCharacter` l'appelle (T000 point 4.a) ; la supprimer casserait ce nœud (erreur de compilation du Blueprint). Elle est désormais **inutile** : on pourra la retirer, ainsi que la propriété `WidgetInteraction`, dans une tâche où le nœud Blueprint sera retiré en même temps (proposition au §7).
+
+#### 2.7 Qui fait quoi, maintenant
+
+| Moment | Qui | Quoi |
+|---|---|---|
+| BeginPlay du personnage (Blueprint) | Event Graph | *Create Widget* (`WBP_Interaction`) → *Definir Widget Interaction* (simple mémorisation) → *Add to Viewport* |
+| *Add to Viewport* | `UWidgetInteraction::NativeConstruct` | trouve l'`InteractionComponent` du pawn, s'abonne à `OnFocusChanged` + `OnHoldChanged`, affiche l'état de départ |
+| Cible changée | `UInteractionComponent` → `GererChangementCible` | `RafraichirPrompt` : une ligne par interaction autorisée, barre si Wipe |
+| R maintenu / clic sur un objet saisissable | `Pull()` / `Grab()` → `OnHoldChanged(true)` | prompt et barre masqués |
+| Relâchement (ou bord d'un vide) | `ReleaseGrab()` → `OnHoldChanged(false)` | prompt recalculé pour la cible actuelle |
+| Appui E | `UComposantNettoyage::TenterNettoyage` | inchangé : profil Wipe ? → `Essuyer()` → `OnProgressionNettoyageChanged` → `MettreAJourProgression` (Blueprint) |
+
+### 3. Configuration
+Aucune. `Nettoyeur.Build.cs` **non modifié** : le module dépend déjà de `UMG` (pour `UUserWidget`, `UTextBlock`, `UProgressBar`), et `Slate` / `SlateCore` arrivent par le module `Engine`, qui les déclare en dépendances **publiques** (vérifié dans `Engine/Source/Runtime/Engine/Engine.Build.cs`) ; les lignes commentées « Uncomment if you are using Slate UI » restent commentées tant que le compilateur ne les réclame pas.
+
+### 4. Étapes dans l'éditeur (à faire par toi après la compilation)
+
+**Avant de commencer :** le dernier commit avant reparentage est `914ffe9`. Attention, `git status` montre que `BP_FirstPersonCharacter.uasset` a été modifié dans l'éditeur depuis (pas par moi — sans doute ton nettoyage B1) : enregistre-le et fais-le commiter **avec** le code de cette extension avant de reparenter. Le code C++ doit être compilé (éditeur **fermé**, Build.bat, voir §5) avant d'ouvrir l'éditeur : sans la classe `WidgetInteraction` compilée, elle n'apparaît pas dans la liste des parents.
+
+**a) Reparenter `WBP_Interaction` vers `WidgetInteraction`**
+
+> Rappel : [Blueprint enfant et reparentage](editeur-contenu.md#notion-blueprint-enfant).
+
+1. Ouvre l'éditeur, puis dans le **Navigateur de contenu (Content Browser)** le dossier `Content/Nettoyeur` ; double-clique sur **WBP_Interaction**.
+2. En haut à droite, passe sur l'onglet **Graphe (Graph)**.
+3. Dans la barre d'outils, clique sur **Paramètres de classe (Class Settings)**.
+4. Panneau **Détails (Details)** → section **Options de classe (Class Options)** → **Classe parente (Parent Class)** : clique sur la liste (elle affiche *User Widget*), tape `WidgetInteraction` dans la recherche, sélectionne **WidgetInteraction**. Confirme si Unreal demande de reparenter.
+5. Clique sur **Compiler (Compile)**. Résultat attendu : coche verte, aucune erreur. Si une erreur « A required widget binding … was not found » apparaît : le nom ou le type d'un élément du Concepteur ne correspond pas (`TexteInteraction` doit être un *Text*, `BarProgression` une *Progress Bar*) ; renomme l'élément dans la **Hiérarchie** (clic droit → **Renommer**) puis recompile, et signale-le.
+6. Si des nœuds *Get TexteInteraction* / *Get BarProgression* affichent un avertissement jaune, fais clic droit dans le vide du graphe concerné → **Actualiser tous les nœuds (Refresh All Nodes)**, puis recompile.
+
+**b) Vérifier les textes réglables**
+1. Toujours dans `WBP_Interaction`, clique sur **Valeurs par défaut de classe (Class Defaults)** dans la barre d'outils.
+2. Panneau **Détails** → catégorie **Interaction | Prompt** → **Textes Interactions** : 3 lignes, *Essuyer* → « E : Nettoyer », *Tirer* → « R (maintenir) : Tirer », *Saisir* → « Clic gauche : Saisir ».
+3. Pour changer un texte : clique dans la case du texte et tape le nouveau. Pour ajouter une interaction : bouton **+** à droite de *Textes Interactions*, choisis le type dans la liste de gauche, tape le texte à droite. L'ordre des lignes à l'écran est l'ordre de cette liste.
+4. **Compiler** puis **Enregistrer (Save)**.
+
+**c) La fonction Blueprint `AfficherInteraction`**
+Elle n'est **plus appelée par personne** (le C++ qui l'appelait par son nom est supprimé). La laisser ne casse rien, mais si quelqu'un l'appelait un jour, elle afficherait / masquerait texte et barre **en concurrence** avec le C++. Je te conseille de la **supprimer** :
+1. Onglet **Graphe** → panneau **Mon Blueprint (My Blueprint)** → *Fonctions* → clic droit sur **AfficherInteraction** → **Rechercher les références (Find References)** : aucun appel ne doit apparaître (hors la fonction elle-même).
+2. Clic droit sur **AfficherInteraction** → **Supprimer (Delete)**.
+3. **Ne touche pas** à `MettreAJourProgression` ni à `AfficherMissionTerminee` : le personnage les appelle toujours.
+4. **Compiler** → **Enregistrer**.
+
+Dans `BP_FirstPersonCharacter`, **rien à changer** : le nœud *Definir Widget Interaction* reste valide (il ne fait plus que mémoriser le widget).
+
+**d) Test en jeu** (`Lvl_FirstPerson`, bouton **Jouer (Play)**)
+1. Ne rien viser → aucun texte au centre, pas de barre.
+2. Viser la preuve `BP_PreuveNettoyable` → « E : Nettoyer » + barre.
+3. Appuyer 4 fois sur E → barre 0.25 → 0.5 → 0.75 → 1.0, la preuve disparaît, le prompt et la barre se masquent, « MISSION TERMINÉE ! » s'affiche en haut à gauche (comme avant).
+4. Viser `BP_ObjetPull_Test` → « R (maintenir) : Tirer », **pas** de barre. Maintenir R → l'objet glisse et le prompt **disparaît** ; relâcher R → le prompt revient tant que tu vises l'objet.
+5. Plusieurs interactions (test sans enregistrer) : quitte le Play, sélectionne `BP_ObjetPull_Test` dans l'**Organiseur (Outliner)** → composant `ProfilInteractions` → *Allowed Interactions* → **+** → *Saisir* (et/ou *Essuyer*). Play → viser l'objet affiche plusieurs lignes, dans l'ordre de la table (*Essuyer* d'abord s'il est présent, avec la barre ; E n'aura pas d'effet car ce n'est pas une preuve, c'est attendu). Annule ensuite (Ctrl+Z ou flèche « réinitialiser » à côté de la liste).
+6. Modifier un texte dans les Class Defaults (b.3), Compiler, Play : le nouveau texte s'affiche, **sans** recompiler le C++.
+7. **Journal de sortie (Output Log)** (menu Fenêtre) : aucun avertissement « WidgetInteraction : aucun InteractionComponent… ».
+
+### 5. Compilation et tests
+- **Compilation : faite par `qa` le 2026-11-16** (éditeur fermé par le développeur, Build.bat depuis PowerShell) : `Result: Succeeded`, 0 erreur, 0 avertissement. Pendant ma tâche l'éditeur était ouvert ; je n'ai fermé ni tué aucun processus.
+- Vérifications faites sans compiler : signatures du moteur 5.7 lues dans les en-têtes (`FText::Join(const FText&, const TArray<FText>&)` dans `Text.h`, `UUserWidget::GetOwningPlayerPawn()` dans `UserWidget.h`) ; dépendances Slate (§3) ; aucune classe du moteur ne s'appelle déjà `UWidgetInteraction` (seul `UWidgetInteractionComponent` existe, nom différent) ; `grep` dans `Source/` : plus aucun `ProcessEvent`, `FindFunction`, `MettreAJourTexteInteraction` ; fichiers en UTF-8 sans BOM, fins de ligne CRLF comme le reste du projet.
+- **Tests en jeu : non réalisés** (procédure §4.d).
+
+### 6. Git
+- Branche : `tache/T001-unifier-visee`. **Aucun commit** de ma part (consigne). Message proposé : `T001: afficher un prompt par interaction autorisée (UWidgetInteraction)`. À commiter **avant** le reparentage du WBP (étape §4.a), pour pouvoir revenir en arrière.
+
+### 7. Résultat et points ouverts
+- Code écrit, **non compilé** (éditeur ouvert), **non testé en jeu**.
+- Pour le développeur : reparentage + suppression de `AfficherInteraction` (§4.a à c). Aucun asset à créer.
+- `BP_FirstPersonCharacter.uasset` apparaît modifié dans `git status` (changement fait dans l'éditeur, hors de cette tâche) : à vérifier / commiter par l'orchestrateur.
+- ⚠️ Si un objet tenu est **détruit** pendant qu'on le tient (sans passer par `ReleaseGrab`), `OnHoldChanged(false)` ne part pas : le prompt reste masqué jusqu'au prochain changement de cible, qui le recalcule correctement. Aucun cas aujourd'hui.
+- ⚠️ Le prompt est recalculé aux changements de cible / de tenue : si le **profil** d'un objet change pendant qu'on le vise (aucun cas aujourd'hui), l'affichage ne suit qu'au prochain changement de cible.
+- ⚠️ Comme avant : un objet avec *Wipe* qui n'est pas une `APreuveNettoyable` affiche « E : Nettoyer » + barre mais E ne fait rien (T003/T004).
+- Propositions pour l'orchestrateur : dette n° 5 → **soldée** dans `00_etat-projet.md`. Plus tard (tâche avec Blueprint) : retirer le nœud *Definir Widget Interaction* du personnage puis `DefinirWidgetInteraction` / `WidgetInteraction` du C++. La règle « le prompt est un widget à parent C++ qui écoute la visée, il n'est pas piloté par un composant de gameplay » mériterait une ligne dans `decisions.md`.
+
+---
+
 ## T001 — Unifier la visée et faire passer le nettoyage par le profil d'interaction — 2026-11-13
 
 **Objectif :** une seule source de vérité pour « ce que le joueur vise » (`UInteractionComponent`). Le nettoyage n'a plus son propre rayon : il lit cette cible et vérifie que son profil autorise `Wipe`. Le comportement en jeu reste celui d'avant (prompt, 4 essuyages, barre, disparition).

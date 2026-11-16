@@ -4,6 +4,94 @@
 
 ---
 
+## QA T001 (extension) — Prompt par interaction — 2026-11-16
+**Verdict :** ✅ Validé QA pour tout ce qui est vérifiable sans lancer le jeu (compilation, code, périmètre, doc). Le reparentage de `WBP_Interaction` et les tests en jeu **n'ont pas été faits** (éditeur fermé, pas de MCP) : ils restent au développeur (procédure en bas).
+
+**Branche :** `tache/T001-unifier-visee` (pas de changement de branche, aucun commit). Partie principale déjà commitée (`914ffe9`) ; l'extension est non commitée.
+
+### Compilation
+- Éditeur fermé. Build.bat (`CLAUDE.md` §6) lancé depuis PowerShell.
+- UBT : `Invalidating makefile for NettoyeurEditor (source file added)` → UHT `-WarningsAsErrors` : `7 files written`, aucun message → `[1/8]`–`[5/8] Compile` (`PersonnageNettoyeur.cpp`, `InteractionComponent.cpp`, `ComposantNettoyage.cpp`, `Module.Nettoyeur.gen.cpp`, `WidgetInteraction.cpp`) → `Link` `.lib` / `.dll` → `WriteMetadata`.
+- **`Result: Succeeded`, 0 erreur, 0 ligne `warning`.** Les fichiers modifiés ont réellement été recompilés : la sortie prouve l'absence d'avertissement.
+
+### Périmètre
+- Modifiés / créés : `WidgetInteraction.h/.cpp` (nouveaux), `InteractionComponent.h/.cpp`, `ComposantNettoyage.h/.cpp` (tous autorisés) ; `InteractionProfileComponent` non touché (justifié au journal §2.2) ; `doc/agents/gameplay-cpp.md`, `doc/notions.md`, la fiche.
+- Assets modifiés **par le développeur** dans l'éditeur (B1), comparés à la version `HEAD` (récupérée par `git lfs smudge`, puis comparaison des noms lisibles contenus dans les deux fichiers) :
+  - `BP_FirstPersonCharacter.uasset` : disparition de `LineTraceSingle`, `PrintString`, `BreakHitResult`, `DrawDebugType`… (bloc mort supprimé) ; `NewVar` → **`WidgetInteraction`** (variable renommée). Aucun autre nom ajouté. `DefinirWidgetInteraction`, `MettreAJourProgression`, `AfficherMissionTerminee`, `K2Node_CreateWidget` toujours présents.
+  - `WBP_Interaction.uasset` : seuls `PrintString`, `Conv_DoubleToString` et leurs pins ont disparu (les 2 Print String de `MettreAJourProgression`). Parent encore `UserWidget` (non reparenté, attendu).
+- Non suivi : `Content/__ExternalActors__/.../I6/M8RK6YKWGV6E3Q8C5UHZX3.uasset` (daté 2026-11-11), **antérieur à T001**, déjà signalé : ne pas l'inclure dans le commit sans décision.
+- Rien sous `Saved/`, `Intermediate/`, `Binaries/`. Encodage des nouveaux fichiers : UTF-8 sans BOM, CRLF.
+
+### Critères d'acceptation
+- [ ] Preuve → « E : Nettoyer » + barre ; `BP_ObjetPull_Test` → « R (maintenir) : Tirer » sans barre ; rien → rien — **test en jeu à faire.** Lecture : `RafraichirPrompt` parcourt la table et garde les entrées non vides pour lesquelles `CanFocusPerform` est vrai (faux si rien visé / sans profil) ; barre visible seulement si `CanFocusPerform(Wipe)` et rien tenu.
+- [ ] Plusieurs interactions → une ligne chacune — **test en jeu à faire.** Lecture : `FText::Join("\n", Lignes)`, ordre = ordre de la TMap.
+- [ ] Textes modifiables dans les Class Defaults sans recompiler — **à faire après reparentage.** Lecture : `TextesInteractions` est `EditAnywhere`, valeurs par défaut au constructeur.
+- [ ] Prompt masqué pendant le Pull — **test en jeu à faire.** Lecture : `OnHoldChanged(true)` à la fin de `Pull()` / `Grab()` seulement si `IsHoldingObject()` ; `RafraichirPrompt` ne produit aucune ligne et masque la barre si un objet est tenu ; un changement de cible pendant la tenue repasse par le même test.
+- [ ] Nettoyage, barre et « mission terminée » inchangés — **test en jeu à faire.** Lecture : `TenterNettoyage`, `PeutNettoyerCible`, `OnProgressionNettoyageChanged.Broadcast` identiques au commit validé (seuls le prompt, l'abonnement et `EndPlay` ont été retirés) ; `MettreAJourProgression` ne fait plus que *Set Percent* ; `AfficherMissionTerminee` touche `TexteObjectifMission`, pas les éléments liés.
+- [x] Plus aucun `ProcessEvent` / `FindFunction` dans `Source/` — `grep -rn "ProcessEvent\|FindFunction" Source/` : aucun résultat ; `MettreAJourTexteInteraction` : aucun résultat.
+- [x] Compilation sans avertissement ; journal et notions à jour — voir Compilation et Relecture documentation.
+
+### Non-régression (lecture du code, pas de jeu)
+- **Saisie Pull/Grab :** seules lignes ajoutées = les `Broadcast`. Dans `ReleaseGrab`, la condition `PhysicsHandle && PhysicsHandle->GrabbedComponent` est remplacée par `IsHoldingObject()`, qui teste exactement la même chose → relâchement identique ; `bIsGrabbing = false` toujours exécuté. Aucun autre `ReleaseComponent` dans `Source/` (les 3 relâchements automatiques de `UpdateHold` passent par `ReleaseGrab`, donc diffusent `false`).
+- **Nettoyage :** voir critère ci-dessus. `UComposantNettoyage` garde `BeginPlay` (recherche de l'`InteractionComponent`), toujours sans Tick.
+- **Blueprint du personnage :** `DefinirWidgetInteraction(UUserWidget*)` garde la même signature et reste `BlueprintCallable` → le nœud ne casse pas. `MettreAJourTexteInteraction` était `UFUNCTION()` non `BlueprintCallable` : aucun nœud Blueprint ne pouvait l'appeler, sa suppression ne casse rien.
+
+### Cas limites testés (lecture du code)
+- **Rien visé** : `CanFocusPerform` faux → texte `Hidden`, barre `Hidden`. Au démarrage, `RafraichirPrompt()` est appelé dans `NativeConstruct` → état initial correct.
+- **Preuve détruite à 1.0** : le sweep ne la touche plus → `SetCurrentFocus(nullptr)` → `OnFocusChanged` → prompt et barre masqués (comme avant).
+- **Pas de pawn / pas d'InteractionComponent** : avertissement dans l'Output Log, pointeur nul testé partout, pas de plantage.
+- **Designer de l'éditeur** : `NativeConstruct` n'est appelé qu'en jeu (moteur, `UserWidget.cpp`, branche hors design time) → pas d'avertissement parasite à l'ouverture du WBP.
+- **Double construction** (Remove from Parent puis Add to Viewport) : `AddUniqueDynamic` + `RemoveDynamic` au `NativeDestruct` → ni double abonnement, ni abonné mort.
+- **Relâcher R sans rien tenir** : `bWasHolding` faux → pas de diffusion.
+- **Objet tenu détruit sans `ReleaseGrab`** : `OnHoldChanged(false)` ne part pas ; le prompt reste masqué jusqu'au prochain changement de cible (signalé par l'agent, aucun cas actuel). Accepté.
+
+### Relecture code
+- **BindWidget ↔ WBP réel :** `TexteInteraction` (`UTextBlock`) et `BarProgression` (`UProgressBar`). Les deux noms et les classes `TextBlock` / `ProgressBar` figurent dans `WBP_Interaction.uasset` ; types confirmés par la Hiérarchie décrite dans `doc/agents/editeur-contenu.md` (T000 point 4.b : `TexteInteraction` = Text, `BarProgression` = ProgressBar). Le reparentage ne devrait pas lever d'erreur de *widget binding* — **non prouvé tant que le WBP n'a pas été compilé dans l'éditeur.**
+- **Conflit avec la logique Blueprint restante (point de vigilance) :** dans le WBP, le seul `SetVisibility` restant est dans `AfficherInteraction`, qui n'est plus appelée nulle part (ni en C++, ni dans `BP_FirstPersonCharacter` : aucune référence dans ses noms). `MettreAJourProgression` = *Set Percent* uniquement ; `AfficherMissionTerminee` = *Set Text* sur `TexteObjectifMission`. **Aucun conflit** de visibilité avec le C++. La suppression d'`AfficherInteraction` est conseillée pour qu'aucun appel futur n'entre en concurrence.
+- Pointeurs : `ComposantInteraction`, `TexteInteraction`, `BarProgression` testés avant usage ; `ComposantInteraction` en `UPROPERTY(Transient)`, remis à `nullptr` au `NativeDestruct`. Fonctions abonnées en `UFUNCTION()` avec la bonne signature (vérifiée par UHT).
+- Pas de Tick / `NativeTick`, pas de `DrawDebug` ajouté, pas de doublon (réutilise `CanFocusPerform`, pas de deuxième lecture du profil). `UWidgetInteraction` n'entre pas en collision avec le moteur (`UWidgetInteractionComponent` est un autre nom).
+- Remarques mineures (non bloquantes) :
+  1. Texte et barre passent en `Visible`, comme l'ancienne fonction Blueprint. `HitTestInvisible` (« Non testable (soi et enfants) ») serait plus juste pour un prompt qui ne doit jamais capter la souris ; sans effet aujourd'hui (souris capturée par le jeu).
+  2. Le remplissage de la barre (`Percent`) n'est jamais remis à 0 : avec une **deuxième** preuve, la barre s'afficherait pleine jusqu'au premier essuyage. Comportement **antérieur** (pas une régression), une seule preuve aujourd'hui ; à prévoir quand il y en aura plusieurs.
+  3. La variable du personnage a été renommée `WidgetInteraction` : même nom que la classe C++ `UWidgetInteraction` et que la propriété `UComposantNettoyage::WidgetInteraction`. Aucun conflit technique (variable ≠ classe, objets différents), mais un nom comme `WidgetPrompt` serait plus lisible pour un débutant.
+
+### Relecture documentation
+- Entrée « T001 (extension) » de `doc/agents/gameplay-cpp.md` : sections 1 à 7 de `doc/CONVENTION.md` présentes ; le pourquoi est expliqué (§2.1) ; le tableau « qui fait quoi » (§2.7) est clair ; étapes éditeur écrites comme un humain (menus FR + EN, clics, cas d'erreur de binding et conduite à tenir) ; procédure de test en jeu détaillée ; compilation honnêtement notée « non faite ».
+- 4 notions nouvelles (BindWidget, NativeConstruct / NativeDestruct / AddUniqueDynamic, TMap, FText / LOCTEXT) : expliquées dans le journal **et** ajoutées à `doc/notions.md` ; les 13 ancres `#notion-…` citées dans l'entrée existent.
+- Seule mention devenue obsolète : journal §5 « Compilation : non faite » (état au moment de l'agent ; la compilation est faite, voir ce rapport).
+- Un débutant peut refaire la tâche en lisant le journal : oui.
+
+### Procédure de validation pour le développeur
+**0. Commit de sécurité** (avant reparentage, `CLAUDE.md` §7) : code de l'extension + `BP_FirstPersonCharacter.uasset` + `WBP_Interaction.uasset` (nettoyage B1) + doc. Ne pas inclure `Content/__ExternalActors__/.../I6/`.
+
+**1. Reparenter `WBP_Interaction`**
+1. Ouvre l'éditeur (le C++ est déjà compilé). **Navigateur de contenu** → `Content/Nettoyeur` → double-clic sur **WBP_Interaction**.
+2. Onglet **Graphe (Graph)** (en haut à droite) → bouton **Paramètres de classe (Class Settings)** dans la barre d'outils.
+3. **Détails** → **Options de classe** → **Classe parente (Parent Class)** → ouvre la liste → tape `WidgetInteraction` → sélectionne-la → confirme.
+4. **Compiler**. Attendu : coche verte. Si « A required widget binding … was not found » apparaît : note le message exact et signale-le.
+5. Si des nœuds *Get TexteInteraction* / *Get BarProgression* sont en jaune : clic droit dans le vide du graphe → **Actualiser tous les nœuds (Refresh All Nodes)** → Compiler.
+
+**2. Supprimer `AfficherInteraction` et vérifier les textes**
+1. **Mon Blueprint** → *Fonctions* → clic droit sur **AfficherInteraction** → **Rechercher les références** : aucun appel attendu.
+2. Clic droit → **Supprimer**. Ne touche pas à `MettreAJourProgression` ni à `AfficherMissionTerminee`.
+3. **Valeurs par défaut de classe (Class Defaults)** → **Interaction | Prompt** → *Textes Interactions* : Essuyer → « E : Nettoyer », Tirer → « R (maintenir) : Tirer », Saisir → « Clic gauche : Saisir ».
+4. **Compiler** → **Enregistrer**. Ouvre `BP_FirstPersonCharacter` → **Compiler** : aucune erreur attendue (nœud *Definir Widget Interaction* intact).
+
+**3. Test en jeu** (`Lvl_FirstPerson`, **Jouer**) — note OK / pas OK pour chaque point :
+1. Ne rien viser → aucun texte au centre, aucune barre.
+2. Viser `BP_PreuveNettoyable` → « E : Nettoyer » + barre.
+3. Viser `BP_ObjetPull_Test` → « R (maintenir) : Tirer », **pas** de barre.
+4. Maintenir R sur `BP_ObjetPull_Test` → l'objet suit, le prompt **disparaît** ; relâcher → il revient tant que tu vises l'objet.
+5. Revenir sur la preuve, appuyer 4 fois sur E → barre 0.25 → 0.5 → 0.75 → 1.0, la preuve disparaît, prompt et barre masqués, « MISSION TERMINÉE ! » en haut à gauche.
+6. Aucun texte bleu de debug à l'écran pendant tout le test (Print String supprimés).
+7. Quitte le Play → Class Defaults de `WBP_Interaction` → change « E : Nettoyer » en « E : Essuyer » → Compiler → Play → le nouveau texte s'affiche sur la preuve, sans recompiler le C++. Remets le texte d'origine → Compiler → Enregistrer.
+8. (Facultatif, sans enregistrer) Instance `BP_ObjetPull_Test` → composant `ProfilInteractions` → *Allowed Interactions* → **+** *Saisir* → Play → deux lignes « R (maintenir) : Tirer » / « Clic gauche : Saisir ». Annule ensuite (Ctrl+Z).
+9. **Journal de sortie (Output Log)** : aucun « WidgetInteraction : aucun InteractionComponent… ».
+
+Si tout est OK : cocher les 5 critères restants de l'extension dans la fiche, puis commit `T001: reparenter WBP_Interaction vers UWidgetInteraction`.
+
+---
+
 ## QA T001 — Unifier la visée et faire passer le nettoyage par le profil d'interaction — 2026-11-13
 **Verdict :** ✅ Validé QA pour tout ce qui est vérifiable sans lancer le jeu (compilation, code, périmètre, doc). Les tests en jeu (prompt, 4 essuyages, objet sans Wipe, debug, Pull/Grab) **n'ont pas été exécutés** : l'éditeur était fermé et les outils MCP Unreal n'étaient pas utilisables. Ils restent à faire par le développeur (procédure en bas).
 

@@ -155,6 +155,11 @@ void UInteractionComponent::Pull()
     // contrairement à Grab, l'objet ne suit pas le Pitch de la caméra.
     HeldTargetLocation = Primitive->GetComponentLocation();
     HeldTargetRotation = Primitive->GetComponentRotation();
+
+    if (IsHoldingObject())
+    {
+        OnHoldChanged.Broadcast(true);
+    }
 }
 
 void UInteractionComponent::Grab()
@@ -184,6 +189,11 @@ void UInteractionComponent::Grab()
         NAME_None,
         Primitive->GetComponentLocation(),
         HeldTargetRotation);
+
+    if (IsHoldingObject())
+    {
+        OnHoldChanged.Broadcast(true);
+    }
 }
 
 void UInteractionComponent::UpdateHold(float DeltaTime)
@@ -274,12 +284,20 @@ void UInteractionComponent::UpdateHold(float DeltaTime)
 
 void UInteractionComponent::ReleaseGrab()
 {
-    if (PhysicsHandle && PhysicsHandle->GrabbedComponent)
+    // ReleaseGrab est aussi appelé quand on relâche la touche sans rien tenir :
+    // on ne prévient les abonnés que si un objet était vraiment tenu.
+    const bool bWasHolding = IsHoldingObject();
+    if (bWasHolding)
     {
         PhysicsHandle->ReleaseComponent();
     }
 
     bIsGrabbing = false;
+
+    if (bWasHolding)
+    {
+        OnHoldChanged.Broadcast(false);
+    }
 }
 
 bool UInteractionComponent::IsHoldingObject() const

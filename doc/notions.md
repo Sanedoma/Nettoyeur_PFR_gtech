@@ -34,6 +34,8 @@
 - **`UPROPERTY(Transient)`** — variable vue par le ramasse-miettes mais jamais sauvegardée (pointeur trouvé en jeu, cache) → [explication](agents/gameplay-cpp.md#notion-transient)
 - **Abonnement C++ à un delegate : `AddDynamic` / `RemoveDynamic`, `EndPlay`** — brancher au BeginPlay, débrancher à l'EndPlay ; la fonction abonnée est une `UFUNCTION` → [explication](agents/gameplay-cpp.md#notion-adddynamic-endplay)
 - **Signature d'une `UFunction` (`FProperty`, `CastField`, `NumParms`, `ParmsSize`, `FMemory_Alloca`)** — vérifier les paramètres d'une fonction Blueprint avant `ProcessEvent` → [explication](agents/gameplay-cpp.md#notion-signature-ufunction)
+- **`TMap<Clé, Valeur>`** — dictionnaire clé → valeur (`Add`, `Find`, boucle sur `TPair`) ; éditable dans les Details, ordre = ordre d'ajout → [explication](agents/gameplay-cpp.md#notion-tmap)
+- **`FText`, `FString`, `LOCTEXT`** — texte affiché au joueur (traduisible) vs chaîne du code ; `LOCTEXT_NAMESPACE`, `FText::Join` → [explication](agents/gameplay-cpp.md#notion-ftext-loctext)
 
 ## Moteur et architecture (Actors, Components, Subsystems…)
 - **Source unique de vérité ; piloté par événement vs sondage** — calculer une donnée à un seul endroit, ne prévenir qu'au changement → [explication](agents/gameplay-cpp.md#notion-source-unique-evenement)
@@ -57,6 +59,8 @@
 
 ## Interface (UMG)
 - **Widget Blueprint : Concepteur, Graphe, Create Widget, Add to Viewport** — créer et afficher une interface ; Is Variable ; visibilité → [explication](agents/editeur-contenu.md#notion-widget-blueprint)
+- **`meta = (BindWidget)` / `BindWidgetOptional`** — pointeur C++ rempli avec l'élément du Concepteur de même nom ; obligatoire ou facultatif → [explication](agents/gameplay-cpp.md#notion-bindwidget)
+- **`NativeConstruct` / `NativeDestruct`, `GetOwningPlayerPawn`, `AddUniqueDynamic`** — cycle de vie d'un widget en C++ (équivalent de BeginPlay / EndPlay) → [explication](agents/gameplay-cpp.md#notion-nativeconstruct)
 
 ## Rendu (matériaux, decals, Niagara…)
 _(vide)_
