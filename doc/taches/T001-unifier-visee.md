@@ -1,6 +1,6 @@
 # T001 — Unifier la visée et faire passer le nettoyage par le profil d'interaction
 
-**Statut :** Validé QA — en attente du développeur (2026-11-13 ; tests en jeu à faire, voir `doc/agents/qa.md`, QA T001)
+**Statut :** ✅ Terminé — validé en jeu par le développeur le 2026-11-16 (partie principale + extension)
 **Agent :** `gameplay-cpp`
 **Branche :** `tache/T001-unifier-visee`
 **Étape du GDD :** §11 étape 2, §6.1 « Principe confirmé : interactions indépendantes et assignables »
@@ -27,11 +27,11 @@ Une seule source de vérité pour « ce que le joueur vise » : `UInteractionCom
 
 ## Critères d'acceptation
 - [x] Un seul trace/sweep de visée par frame dans tout le projet. *(QA : grep de `Source/`)*
-- [ ] Viser une `BP_PreuveNettoyable` affiche le prompt ; ne plus la viser le masque.
-- [ ] Essuyer 4 fois fait passer la progression 0.25 → 0.5 → 0.75 → 1.0 et la preuve disparaît (comme avant).
-- [ ] Un objet **sans** `Wipe` dans son profil ne peut pas être essuyé et n'affiche pas le prompt de nettoyage.
-- [ ] Pas de ligne de debug à l'écran par défaut ; `bAfficherDebug = true` la réaffiche.
-- [ ] Grab et Pull inchangés.
+- [x] Viser une `BP_PreuveNettoyable` affiche le prompt ; ne plus la viser le masque.
+- [x] Essuyer 4 fois fait passer la progression 0.25 → 0.5 → 0.75 → 1.0 et la preuve disparaît (comme avant).
+- [x] Un objet **sans** `Wipe` dans son profil ne peut pas être essuyé et n'affiche pas le prompt de nettoyage.
+- [x] Pas de ligne de debug à l'écran par défaut ; `bAfficherDebug = true` la réaffiche.
+- [x] Grab et Pull inchangés. *(Pull testé en jeu ; Grab toujours non testable — aucun objet [Grab], reporté en T002.)*
 - [x] Compilation sans nouvel avertissement. *(QA : Build.bat, recompilation forcée des 7 `.cpp`, 0 erreur / 0 avertissement)*
 - [x] Journal conforme à `doc/CONVENTION.md` (notamment : delegate, binding, pourquoi supprimer un double trace).
 
@@ -64,7 +64,7 @@ Nettoyage du graphe de `BP_FirstPersonCharacter` (bloc mort Line Trace + Print S
 ## Extension demandée par le développeur (orchestrateur, 2026-11-16)
 **Demande :** « régler l'affichage pour afficher le message correspondant pour chaque interaction ». Le prompt ne connaît aujourd'hui que le nettoyage (texte figé « Appuie sur E pour nettoyer »).
 
-**Statut de l'extension :** Validé QA (hors jeu) — en attente du développeur (2026-11-16). Compilation OK (0 erreur, 0 avertissement), code et doc relus ; reparentage de `WBP_Interaction` et tests en jeu à faire par le développeur (rapport « QA T001 (extension) » dans `doc/agents/qa.md`). La partie principale de T001 reste « Validé QA — en attente du développeur ».
+**Statut de l'extension :** ✅ Terminé — `WBP_Interaction` reparenté vers `WidgetInteraction` et validé en jeu par le développeur le 2026-11-16.
 
 ### Travail attendu
 1. Nouvelle classe C++ `UWidgetInteraction` (parent `UUserWidget`), fichiers `WidgetInteraction.h/.cpp`, qui deviendra le parent de `WBP_Interaction` :
@@ -81,11 +81,11 @@ Nettoyage du graphe de `BP_FirstPersonCharacter` (bloc mort Line Trace + Print S
 Ceux de T001 + `WidgetInteraction.h/.cpp` (nouveaux), `InteractionProfileComponent.h/.cpp`.
 
 ### Critères d'acceptation (extension)
-- [ ] Viser la preuve : « E : Nettoyer » + barre. Viser `BP_ObjetPull_Test` : « R (maintenir) : Tirer », pas de barre. Ne rien viser : rien.
-- [ ] Un objet avec plusieurs interactions affiche une ligne par interaction.
-- [ ] Les textes se modifient dans les Class Defaults de `WBP_Interaction` sans recompiler le C++.
-- [ ] Prompt masqué pendant qu'on tient un objet (Pull).
-- [ ] Nettoyage, barre et « mission terminée » inchangés.
+- [x] Viser la preuve : « E : Nettoyer » + barre. Viser `BP_ObjetPull_Test` : « R (maintenir) : Tirer », pas de barre. Ne rien viser : rien.
+- [ ] Un objet avec plusieurs interactions affiche une ligne par interaction. *(Non testable en jeu : aucun objet n'a deux interactions aujourd'hui. Conforme à la relecture QA ; à vérifier en T002 avec l'objet [Grab, Launch].)*
+- [x] Les textes se modifient dans les Class Defaults de `WBP_Interaction` sans recompiler le C++.
+- [x] Prompt masqué pendant qu'on tient un objet (Pull).
+- [x] Nettoyage, barre et « mission terminée » inchangés.
 - [x] Plus aucun `ProcessEvent` / `FindFunction` dans `Source/`. _(QA 2026-11-16)_
 - [x] Compilation sans avertissement ; journal et notions à jour. _(QA 2026-11-16)_
 
